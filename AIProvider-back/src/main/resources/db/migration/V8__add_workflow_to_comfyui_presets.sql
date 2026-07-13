@@ -1,0 +1,2 @@
+ALTER TABLE ComfyUiPresets
+  ADD COLUMN WorkflowId VARCHAR(64) NOT NULL DEFAULT 'wai-v15' AFTER Title;

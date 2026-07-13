@@ -99,4 +99,47 @@ public class BusinessInsightsRepository {
             return Collections.emptyList();
         }
     }
+
+    public Map<String, Object> currentMaidState() {
+        try {
+            Map<String, Object> state = insightsMapper.currentMaidState();
+            return state == null ? Collections.<String, Object>emptyMap() : state;
+        } catch (Exception ignored) {
+            return Collections.emptyMap();
+        }
+    }
+
+    public Map<String, Object> maidState(String roleId) {
+        try {
+            Map<String, Object> state = insightsMapper.maidState(roleId);
+            return state == null ? Collections.<String, Object>emptyMap() : state;
+        } catch (Exception ignored) {
+            return Collections.emptyMap();
+        }
+    }
+
+    public Map<String, Object> maidRoleSummary(String roleId) {
+        try {
+            Map<String, Object> summary = insightsMapper.maidRoleSummary(roleId);
+            return summary == null ? Collections.<String, Object>emptyMap() : summary;
+        } catch (Exception ignored) {
+            return Collections.emptyMap();
+        }
+    }
+
+    public List<Map<String, Object>> maidRoleDaily(String roleId) {
+        try {
+            return insightsMapper.maidRoleDaily(roleId);
+        } catch (Exception ignored) {
+            return Collections.emptyList();
+        }
+    }
+
+    public List<Map<String, Object>> maidRoleRecentCalls(String roleId) {
+        try {
+            return insightsMapper.maidRoleRecentCalls(roleId);
+        } catch (Exception ignored) {
+            return Collections.emptyList();
+        }
+    }
 }

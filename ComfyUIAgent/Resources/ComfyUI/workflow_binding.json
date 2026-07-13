@@ -1,0 +1,18 @@
+{
+  "fields": {
+    "positivePrompt": { "nodeTitle": "正向提示词", "input": "text" },
+    "negativePrompt": { "nodeTitle": "负向提示词", "input": "text" },
+    "width": { "nodeTitle": "生成尺寸", "input": "width" },
+    "height": { "nodeTitle": "生成尺寸", "input": "height" },
+    "batchSize": { "nodeTitle": "生成尺寸", "input": "batch_size" },
+    "seed": { "nodeTitle": "采样参数", "input": "seed" },
+    "steps": { "nodeTitle": "采样参数", "input": "steps" },
+    "cfg": { "nodeTitle": "采样参数", "input": "cfg" },
+    "sampler": { "nodeTitle": "采样参数", "input": "sampler_name" },
+    "scheduler": { "nodeTitle": "采样参数", "input": "scheduler" },
+    "denoise": { "nodeTitle": "采样参数", "input": "denoise" },
+    "filenamePrefix": { "nodeTitle": "最终输出", "input": "filename_prefix" }
+  },
+  "outputNode": { "title": "最终输出" },
+  "capabilities": { "styleReference": false, "poseReference": false, "controlNet": false }
+}

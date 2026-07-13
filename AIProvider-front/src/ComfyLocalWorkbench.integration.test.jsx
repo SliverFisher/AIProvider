@@ -1,0 +1,269 @@
+// @vitest-environment jsdom
+import React from "react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import ComfyLocalWorkbench from "./ComfyLocalWorkbench";
+
+const PROMPT_ID = "11111111-1111-1111-1111-111111111111";
+
+const workflow = {
+  id: "futa01",
+  name: "Futa 01 · 竖版文生图",
+  fields: ["positivePrompt", "negativePrompt", "width", "height", "batchSize", "seed", "steps", "cfg", "sampler", "scheduler", "denoise", "secondPassSteps", "secondPassDenoise", "secondPassSeed"],
+  defaults: { positivePrompt: "portrait", negativePrompt: "bad", width: 1080, height: 1920, batchSize: 1, seed: 11, steps: 30, cfg: 5, sampler: "uni_pc", scheduler: "normal", denoise: 1, secondPassSteps: 22, secondPassDenoise: 0.28, secondPassSeed: 12 },
+  capabilities: { styleReference: false, poseReference: false, controlNet: false },
+  definition: {
+    "4": { class_type: "KSampler", inputs: { positive: ["28", 0], latent_image: ["5", 0], steps: 30, cfg: 5, seed: 1 } },
+    "5": { class_type: "EmptyLatentImage", inputs: { width: 1080, height: 1920 } },
+    "7": { class_type: "SaveImage", _meta: { title: "最终输出" }, inputs: {} },
+    "28": { inputs: { text: "portrait" } },
+  },
+  binding: { fields: {}, outputNode: { title: "最终输出" } },
+};
+const workflow2 = { ...workflow, id: "futa02", name: "Futa 02 · 透明双输出", fields: undefined, binding: { ...workflow.binding, fields: { ...Object.fromEntries(workflow.fields.map((key) => [key, {}])), node_4_control_after_generate: { nodeId: "4", input: "control_after_generate", label: "KSampler 4 · control_after_generate" } } }, defaults: { ...workflow.defaults, positivePrompt: "changed by workflow", width: 832, height: 1216, batchSize: 3, seed: 99, steps: 42, cfg: 7, sampler: "euler", scheduler: "karras", node_4_control_after_generate: false } };
+const cutoutWorkflow = {
+  id: "local-a4f23acdd681e785", name: "BiRefNet_一键抠图_透明PNG", relativePath: "BiRefNet_一键抠图_透明PNG.json",
+  fields: ["sourceImage", "filenamePrefix"], defaults: { sourceImage: "", filenamePrefix: "BiRefNet_一键抠图", randomSeed: true },
+  capabilities: { inputImage: true, autoCutout: true, generationAndCutout: false },
+  definition: { "1": { class_type: "LoadImage", inputs: { image: "" } }, "8": { class_type: "SaveImage", inputs: { filename_prefix: "BiRefNet_一键抠图" } } },
+  binding: { fields: { sourceImage: { nodeId: "1", input: "image" }, filenamePrefix: { nodeId: "8", input: "filename_prefix" } }, outputNode: { nodeId: "8", title: "保存透明 PNG" } },
+};
+const interactiveWorkflow = {
+  id: "local-sam2", name: "BiRefNet_SAM2_点选删除物体_透明PNG",
+  fields: ["sourceImage", "filenamePrefix", "node_5_editor_data", "node_5_default_radius"],
+  defaults: { sourceImage: "", filenamePrefix: "SAM2_Result", node_5_editor_data: '{"points":[],"bboxes":[]}', node_5_default_radius: 12 },
+  capabilities: { inputImage: true },
+  definition: { "1": { class_type: "LoadImage", inputs: { image: "" } }, "5": { class_type: "MaskEditMEC", inputs: { editor_data: '{"points":[],"bboxes":[]}', default_radius: 12 } }, "13": { class_type: "SaveImage", inputs: { filename_prefix: "SAM2_Result" } } },
+  binding: { fields: {
+    sourceImage: { nodeId: "1", nodeType: "LoadImage", input: "image" },
+    filenamePrefix: { nodeId: "13", nodeType: "SaveImage", input: "filename_prefix" },
+    node_5_editor_data: { nodeId: "5", nodeType: "MaskEditMEC", input: "editor_data", label: "MaskEditMEC 5 · editor_data" },
+    node_5_default_radius: { nodeId: "5", nodeType: "MaskEditMEC", input: "default_radius", label: "MaskEditMEC 5 · default_radius" },
+  }, outputNode: { nodeId: "13", title: "最终输出" } },
+};
+
+const completed = {
+  prompt: [0, 0, workflow.definition],
+  outputs: { "7": { images: [{ filename: "done.png", subfolder: "aimaid", type: "output" }] } },
+  status: { messages: [["execution_start", { timestamp: Date.now() }]] },
+};
+
+function json(data, status = 200) {
+  return new Response(JSON.stringify(data), { status, headers: { "Content-Type": "application/json" } });
+}
+
+describe("Comfy image generation flow", () => {
+  let submitted;
+  let moved;
+  let galleryRequests;
+  let externalRun;
+  let externalQueuePoll;
+  let externalGalleryReady;
+  let savedPreset;
+  let submittedEditorData;
+  let savedTwitterTask;
+
+  beforeEach(() => {
+    submitted = false;
+    moved = false;
+    galleryRequests = 0;
+    externalRun = false;
+    externalQueuePoll = 0;
+    externalGalleryReady = false;
+    savedPreset = null;
+    submittedEditorData = null;
+    savedTwitterTask = null;
+    vi.stubGlobal("confirm", vi.fn(() => true));
+    vi.stubGlobal("fetch", vi.fn(async (input, options = {}) => {
+      const url = String(input);
+      if (url.endsWith("/api/config")) return json({ token: "local-token", platform: "Windows", configured: true });
+      if (url.endsWith("/api/comfy/status")) return json({ running: true, platform: "Windows", configured: true });
+      if (url.endsWith("/api/local-workflows/settings")) return json({ directory: "F:\\ComfyUI\\user\\default\\workflows", exists: true });
+      if (url.endsWith("/api/local-workflows")) return json({ directory: "F:\\ComfyUI\\user\\default\\workflows", workflows: [workflow, workflow2, cutoutWorkflow, interactiveWorkflow], rejected: [] });
+      if (url.includes("/api/comfy-presets") && options.method === "POST") {
+        savedPreset = JSON.parse(options.body);
+        return json({ code: 200, data: savedPreset });
+      }
+      if (url.includes("/api/comfy-presets")) return json({ code: 200, data: [{ id: 2, title: "扶她0", workflowId: "futa01", outputFolder: "aimaid", parameters: { positivePrompt: "preset prompt", width: 1080, height: 1920 } }] });
+      if (url.startsWith("/api/assets?")) return json({ code: 200, data: { page: 1, pages: 1, total: 1, items: [{ id: 12, platform: "Windows", localPath: "C:\\assets\\saved.png", localUrl: "http://127.0.0.1:32145/api/assets/file?path=saved.png", fileName: "saved.png", fileSize: 8 }] } });
+      if (url.endsWith("/api/twitter/accounts")) return json({ code: 200, data: [{ id: 2, username: "tester", sessionStatus: "CONNECTED" }] });
+      if (url.endsWith("/api/twitter/posts/local-scheduled") && options.method === "POST") {
+        savedTwitterTask = options.body;
+        return json({ code: 200, data: { id: 88 } });
+      }
+      if (url === "blob:done") return new Response(new Blob([new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])], { type: "image/png" }));
+      if (url.endsWith("/api/folders")) return json({ folders: ["aimaid", "favorites"] });
+      if (url.endsWith("/api/migration/settings")) return json({ directory: "C:\\Users\\49213\\Desktop\\A\\ai成品" });
+      if (url.endsWith("/comfy/queue")) {
+        if (externalRun && externalQueuePoll++ === 0) return json({ queue_running: [[0, "external-prompt"]], queue_pending: [] });
+        if (externalRun) externalGalleryReady = true;
+        return json({ queue_running: [], queue_pending: [] });
+      }
+      if (url.endsWith("/comfy/aiprovider/progress")) return json({ promptId: "", nodes: {} });
+      if (url.endsWith("/api/gallery/move") && options.method === "POST") {
+        const body = JSON.parse(options.body);
+        expect(body).toEqual({ paths: ["aimaid/done.png"] });
+        moved = true;
+        return json({ moved: 1, folder: "C:\\Users\\49213\\Desktop\\A\\ai成品", manifest: "aiprovider-migration-test.json", platform: "Windows", assets: [{ localPath: "C:\\Users\\49213\\Desktop\\A\\ai成品\\done.png", localUrl: "http://127.0.0.1:32145/api/assets/file?path=done.png", fileName: "done.png" }] });
+      }
+      if (url.endsWith("/api/assets/batch") && options.method === "POST") return json({ code: 200, data: { saved: 1 } });
+      if (url.includes("/api/gallery?")) {
+        galleryRequests += 1;
+        return json({ items: externalGalleryReady ? [{ id: "external-prompt", prompt: "external", images: [{ filename: "external.png", path: "aimaid/external.png" }] }] : submitted && !moved ? [{
+        id: PROMPT_ID,
+        promptId: PROMPT_ID,
+        prompt: "portrait",
+        createdAt: new Date().toISOString(),
+        images: [{ filename: "done.png", path: "aimaid/done.png" }],
+        }] : [] });
+      }
+      if (url.includes("/api/gallery/file?")) return new Response(new Blob(["image"], { type: "image/png" }));
+      if (url.includes("/api/assets/file?")) return new Response(new Blob(["image"], { type: "image/png" }));
+      if (url.includes(`/comfy/history/${PROMPT_ID}`)) return json({ [PROMPT_ID]: completed });
+      if (url.includes("/comfy/view?")) return new Response(new Blob(["image"], { type: "image/png" }));
+      if (url.endsWith("/api/generate") && options.method === "POST") {
+        submitted = true;
+        submittedEditorData = options.body.get("node_5_editor_data");
+        expect(options.body.get("workflowDefinition")).toContain("SaveImage");
+        expect(options.body.get("workflowBinding")).toContain("outputNode");
+        return json({ promptId: PROMPT_ID, finalOutputNodeId: "7", actualSeed: 42 });
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    }));
+    vi.stubGlobal("URL", { ...URL, createObjectURL: vi.fn(() => "blob:done"), revokeObjectURL: vi.fn() });
+  });
+
+  afterEach(() => { cleanup(); vi.unstubAllGlobals(); localStorage.clear(); });
+
+  it("loads the local workflow, submits it locally, polls and renders the completed image", async () => {
+    render(<ComfyLocalWorkbench />);
+    const generate = await screen.findByRole("button", { name: "开始生成" });
+    await waitFor(() => expect(generate.disabled).toBe(false));
+    expect(screen.getByRole("combobox", { name: "当前生成工作流" }).value).toBe("futa01");
+    fireEvent.click(generate);
+    const image = await screen.findByAltText("历史生成结果", {}, { timeout: 5000 });
+    expect(image.getAttribute("src")).toBe("blob:done");
+    expect(screen.getByText("1 张")).toBeTruthy();
+  }, 8000);
+
+  it("edits workflow dimensions and cuts selected results into a chosen folder", async () => {
+    render(<ComfyLocalWorkbench />);
+    const generate = await screen.findByRole("button", { name: "开始生成" });
+    await waitFor(() => expect(generate.disabled).toBe(false));
+
+    fireEvent.change(screen.getByRole("combobox", { name: "画面尺寸" }), { target: { value: "custom" } });
+    fireEvent.change(screen.getByRole("spinbutton", { name: "宽度" }), { target: { value: "960" } });
+    fireEvent.change(screen.getByRole("spinbutton", { name: "高度" }), { target: { value: "1600" } });
+
+    fireEvent.click(generate);
+    const image = await screen.findByAltText("历史生成结果", {}, { timeout: 5000 });
+    fireEvent.click(screen.getByRole("button", { name: "选择" }));
+    fireEvent.click(image.closest("button"));
+    fireEvent.click(screen.getByRole("button", { name: "迁移 1" }));
+    await waitFor(() => expect(moved).toBe(true));
+    await waitFor(() => expect(screen.queryByAltText("历史生成结果")).toBeNull());
+  }, 8000);
+
+  it("shows and loads workflow parameters immediately when switching workflows without refreshing the gallery", async () => {
+    render(<ComfyLocalWorkbench />);
+    const workflowSelect = await screen.findByRole("combobox", { name: "当前生成工作流" });
+    await waitFor(() => expect(workflowSelect.value).toBe("futa01"));
+    const prompt = screen.getByRole("textbox", { name: "正向提示词" });
+    expect(workflowSelect.compareDocumentPosition(prompt) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    fireEvent.change(prompt, { target: { value: "keep this prompt" } });
+    const requestsBeforeSwitch = galleryRequests;
+    fireEvent.change(workflowSelect, { target: { value: "futa02" } });
+    const currentPrompt = screen.getByRole("textbox", { name: "正向提示词" });
+    expect(currentPrompt.value).toBe("changed by workflow");
+    const advancedPanel = screen.getByText("高级选项").closest("details");
+    expect(advancedPanel.open).toBe(false);
+    expect(advancedPanel.contains(screen.getByRole("spinbutton", { name: "Steps" }))).toBe(true);
+    expect(advancedPanel.contains(currentPrompt)).toBe(false);
+    expect(screen.getByRole("spinbutton", { name: "生成数量" }).value).toBe("3");
+    fireEvent.click(screen.getByRole("button", { name: "固定种子" }));
+    expect(screen.getByRole("spinbutton", { name: "Seed" }).value).toBe("99");
+    expect(screen.getByRole("spinbutton", { name: "Steps" }).value).toBe("42");
+    expect(screen.getByRole("spinbutton", { name: "CFG" }).value).toBe("7");
+    expect(screen.getByRole("combobox", { name: "Sampler" }).value).toBe("euler");
+    expect(screen.getByRole("combobox", { name: "Scheduler" }).value).toBe("karras");
+    expect(screen.getByRole("spinbutton", { name: "denoise" }).value).toBe("1");
+    expect(screen.getByRole("spinbutton", { name: "secondPassSteps" }).value).toBe("22");
+    expect(screen.getByRole("spinbutton", { name: "secondPassDenoise" }).value).toBe("0.28");
+    expect(screen.getByRole("spinbutton", { name: "secondPassSeed" }).value).toBe("12");
+    const dynamic = screen.getByRole("checkbox", { name: "KSampler 4 · control_after_generate" });
+    fireEvent.click(dynamic);
+    fireEvent.change(screen.getByRole("textbox", { name: "新方案名称" }), { target: { value: "updated workflow config" } });
+    fireEvent.click(screen.getByRole("button", { name: "保存当前配置" }));
+    await waitFor(() => expect(savedPreset?.parameters?.node_4_control_after_generate).toBe(true));
+    expect(savedPreset.workflowId).toBe("futa02");
+    expect(galleryRequests).toBe(requestsBeforeSwitch);
+  });
+
+  it("loads Prompt schemes by stable backend id", async () => {
+    render(<ComfyLocalWorkbench />);
+    const schemes = await screen.findByRole("combobox", { name: "Prompt 方案" });
+    expect(screen.getByRole("option", { name: "扶她0" }).value).toBe("2");
+    fireEvent.change(schemes, { target: { value: "2" } });
+    expect(screen.getByRole("textbox", { name: "正向提示词" }).value).toBe("preset prompt");
+  });
+
+  it("refreshes the gallery when an external ComfyUI task leaves the queue", async () => {
+    externalRun = true;
+    render(<ComfyLocalWorkbench />);
+    const image = await screen.findByAltText("历史生成结果", {}, { timeout: 7000 });
+    expect(image.getAttribute("src")).toBe("blob:done");
+    expect(galleryRequests).toBeGreaterThan(1);
+  }, 8000);
+
+  it("uploads an asset-backed Twitter task with its asset id", async () => {
+    render(<ComfyLocalWorkbench />);
+    fireEvent.click(await screen.findByRole("button", { name: "我的资产" }));
+    const image = await screen.findByAltText("历史生成结果");
+    fireEvent.click(screen.getByRole("button", { name: "选择" }));
+    fireEvent.click(image.closest("button"));
+    fireEvent.click(screen.getByRole("button", { name: /添加到 Twitter 任务 1/ }));
+    fireEvent.click(await screen.findByRole("button", { name: "保存发布任务" }));
+    await waitFor(() => expect(savedTwitterTask).toBeInstanceOf(FormData));
+    expect(savedTwitterTask.get("assetIds")).toBe("12");
+    expect(savedTwitterTask.get("images").name).toBe("saved.png");
+    expect(savedTwitterTask.get("delayMinutes")).toBe("15");
+  });
+
+  it("renders the real BiRefNet cutout workflow required parameters immediately", async () => {
+    render(<ComfyLocalWorkbench />);
+    const workflowSelect = await screen.findByRole("combobox", { name: "当前生成工作流" });
+    await waitFor(() => expect(workflowSelect.value).toBe("futa01"));
+    fireEvent.change(workflowSelect, { target: { value: "local-a4f23acdd681e785" } });
+    expect(screen.queryByRole("combobox", { name: "Prompt 方案" })).toBeNull();
+    const source = screen.getByLabelText("待处理原图");
+    expect(screen.getByText("高级选项").closest("details").contains(source)).toBe(false);
+    const image = new File(["png"], "person.png", { type: "image/png" });
+    fireEvent.change(source, { target: { files: [image] } });
+    expect(screen.getByText("person.png")).toBeTruthy();
+    const filenamePrefix = screen.getByRole("textbox", { name: "filenamePrefix" });
+    expect(filenamePrefix.value).toBe("BiRefNet_一键抠图");
+    expect(screen.getByText("高级选项").closest("details").contains(filenamePrefix)).toBe(true);
+    expect(screen.queryByRole("spinbutton", { name: "Steps" })).toBeNull();
+  });
+
+  it("renders a visual mask editor for interactive workflow nodes and submits painted points", async () => {
+    const context = { clearRect: vi.fn(), drawImage: vi.fn(), beginPath: vi.fn(), arc: vi.fn(), fill: vi.fn(), stroke: vi.fn() };
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(context);
+    render(<ComfyLocalWorkbench />);
+    const workflowSelect = await screen.findByRole("combobox", { name: "当前生成工作流" });
+    fireEvent.change(workflowSelect, { target: { value: "local-sam2" } });
+    expect(screen.getByText("区域编辑")).toBeTruthy();
+    expect(screen.queryByRole("textbox", { name: "MaskEditMEC 5 · editor_data" })).toBeNull();
+    const imageFile = new File(["png"], "person.png", { type: "image/png" });
+    fireEvent.change(screen.getByLabelText("待处理原图"), { target: { files: [imageFile] } });
+    const editorImage = await screen.findByAltText("区域编辑原图");
+    Object.defineProperties(editorImage, { naturalWidth: { value: 512 }, naturalHeight: { value: 512 } });
+    fireEvent.load(editorImage);
+    const canvas = screen.getByLabelText("涂抹删除区域");
+    vi.spyOn(canvas, "getBoundingClientRect").mockReturnValue({ left: 0, top: 0, width: 512, height: 512, right: 512, bottom: 512, x: 0, y: 0, toJSON() {} });
+    fireEvent.pointerDown(canvas, { clientX: 200, clientY: 220, pointerId: 1 });
+    fireEvent.pointerUp(canvas, { pointerId: 1 });
+    fireEvent.click(screen.getByRole("button", { name: "开始生成" }));
+    await waitFor(() => expect(submittedEditorData).toContain('"label":1'));
+  });
+});

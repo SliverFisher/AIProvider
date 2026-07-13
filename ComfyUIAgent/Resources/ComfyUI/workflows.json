@@ -1,0 +1,8 @@
+[
+  {
+    "id": "futa01",
+    "name": "Futa 01 · 竖版文生图",
+    "workflow": "workflow_api.json",
+    "binding": "workflow_binding.json"
+  }
+]

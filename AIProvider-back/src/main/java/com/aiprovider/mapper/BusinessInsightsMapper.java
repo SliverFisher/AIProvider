@@ -41,7 +41,43 @@ public interface BusinessInsightsMapper {
             "FROM RemoteVideoItems ORDER BY COALESCE(LastResolvedAt, CreatedAt) DESC LIMIT 6")
     List<Map<String, Object>> recentRemoteVideos();
 
-    @Select("SELECT RoleId, DisplayName, IsEnabled, UpdatedAt " +
-            "FROM VoiceRoles WHERE IsEnabled = 1 ORDER BY SortOrder, DisplayName LIMIT 12")
+    @Select("SELECT RoleId, DisplayName, AvatarPath, IsEnabled, UpdatedAt " +
+            "FROM VoiceRoles WHERE IsEnabled = 1 ORDER BY SortOrder, DisplayName")
     List<Map<String, Object>> voiceRoles();
+
+    @Select("SELECT MaidId, Name, Mood, Favorability, CompanionshipSeconds, InteractionCount, " +
+            "LastInteractionTime, UpdatedAt FROM MaidStates WHERE IsCurrent = 1 " +
+            "ORDER BY UpdatedAt DESC LIMIT 1")
+    Map<String, Object> currentMaidState();
+
+    @Select("SELECT MaidId, Name, Mood, Favorability, CompanionshipSeconds, InteractionCount, " +
+            "LastInteractionTime, UpdatedAt FROM MaidStates WHERE LOWER(MaidId) = LOWER(#{roleId}) " +
+            "ORDER BY UpdatedAt DESC LIMIT 1")
+    Map<String, Object> maidState(@Param("roleId") String roleId);
+
+    @Select("SELECT COUNT(*) AS ConversationCount, " +
+            "COALESCE((SELECT COUNT(*) FROM LlmCallLogs l WHERE EXISTS " +
+            "(SELECT 1 FROM LlmChatConversations c WHERE c.ConversationId = l.ConversationId AND LOWER(c.RoleId) = LOWER(#{roleId}))), 0) AS LlmCallCount, " +
+            "COALESCE((SELECT SUM(l.PromptTokens) FROM LlmCallLogs l WHERE EXISTS " +
+            "(SELECT 1 FROM LlmChatConversations c WHERE c.ConversationId = l.ConversationId AND LOWER(c.RoleId) = LOWER(#{roleId}))), 0) AS InputTokens, " +
+            "COALESCE((SELECT SUM(l.CompletionTokens) FROM LlmCallLogs l WHERE EXISTS " +
+            "(SELECT 1 FROM LlmChatConversations c WHERE c.ConversationId = l.ConversationId AND LOWER(c.RoleId) = LOWER(#{roleId}))), 0) AS OutputTokens, " +
+            "COALESCE((SELECT SUM(l.TotalTokens) FROM LlmCallLogs l WHERE EXISTS " +
+            "(SELECT 1 FROM LlmChatConversations c WHERE c.ConversationId = l.ConversationId AND LOWER(c.RoleId) = LOWER(#{roleId}))), 0) AS TotalTokens, " +
+            "COALESCE((SELECT COUNT(*) FROM LlmChatMessages m WHERE EXISTS " +
+            "(SELECT 1 FROM LlmChatConversations c WHERE c.ConversationId = m.ConversationId AND LOWER(c.RoleId) = LOWER(#{roleId}))), 0) AS MessageCount " +
+            "FROM LlmChatConversations WHERE LOWER(RoleId) = LOWER(#{roleId})")
+    Map<String, Object> maidRoleSummary(@Param("roleId") String roleId);
+
+    @Select("SELECT DATE(l.CreatedAt) AS day, COUNT(*) AS callCount, COALESCE(SUM(l.TotalTokens), 0) AS totalTokens " +
+            "FROM LlmCallLogs l WHERE l.CreatedAt >= DATE_SUB(NOW(), INTERVAL 14 DAY) AND EXISTS " +
+            "(SELECT 1 FROM LlmChatConversations c WHERE c.ConversationId = l.ConversationId AND LOWER(c.RoleId) = LOWER(#{roleId})) " +
+            "GROUP BY DATE(l.CreatedAt) ORDER BY day")
+    List<Map<String, Object>> maidRoleDaily(@Param("roleId") String roleId);
+
+    @Select("SELECT l.Id, l.Provider, l.Model, l.PromptTokens, l.CompletionTokens, l.TotalTokens, " +
+            "l.DurationMs, l.ResponseStatusCode, l.Error, l.CreatedAt FROM LlmCallLogs l WHERE EXISTS " +
+            "(SELECT 1 FROM LlmChatConversations c WHERE c.ConversationId = l.ConversationId AND LOWER(c.RoleId) = LOWER(#{roleId})) " +
+            "ORDER BY l.CreatedAt DESC LIMIT 5")
+    List<Map<String, Object>> maidRoleRecentCalls(@Param("roleId") String roleId);
 }

@@ -2,6 +2,7 @@ package com.aiprovider.repository;
 
 import com.aiprovider.mapper.SyncMapper;
 import com.fasterxml.jackson.databind.JsonNode;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
 import java.util.*;
@@ -12,10 +13,12 @@ import java.util.stream.Collectors;
 public class SyncRepository {
 
     private final SyncMapper syncMapper;
+    private final JdbcTemplate jdbcTemplate;
     private final Map<String, TableMetadata> metadataCache = new ConcurrentHashMap<>();
 
-    public SyncRepository(SyncMapper syncMapper) {
+    public SyncRepository(SyncMapper syncMapper, JdbcTemplate jdbcTemplate) {
         this.syncMapper = syncMapper;
+        this.jdbcTemplate = jdbcTemplate;
     }
 
     public void insertSyncRun(String deviceId, int receivedCount, int upsertedCount) {
@@ -56,7 +59,7 @@ public class SyncRepository {
 
         String sql = "INSERT INTO " + quote(table) + "(" + columns + ") VALUES(" + placeholders +
             ") ON DUPLICATE KEY UPDATE " + updates;
-        syncMapper.executeQuery(sql);
+        jdbcTemplate.update(sql, values.values().toArray());
     }
 
     private TableMetadata loadMetadata(String table) {

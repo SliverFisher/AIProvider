@@ -20,4 +20,9 @@ public class BusinessInsightsController {
     public Result<Map<String, Object>> command() {
         return Result.success(insightsService.getCommand());
     }
+
+    @GetMapping("/maid-role")
+    public Result<Map<String, Object>> maidRole(@RequestParam String roleId) {
+        return Result.success(insightsService.getMaidRole(roleId));
+    }
 }

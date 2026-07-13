@@ -14,10 +14,39 @@ spring:
     enabled: true
     baseline-on-migrate: true
     baseline-version: 0
+  servlet:
+    multipart:
+      max-file-size: 15MB
+      max-request-size: 60MB
 
 mybatis:
   mapper-locations: classpath:mapper/*.xml
   type-aliases-package: com.aiprovider.model
   configuration:
     map-underscore-to-camel-case: true
-    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+    log-impl: org.apache.ibatis.logging.slf4j.Slf4jImpl
+
+logging:
+  config: classpath:log4j2-spring.xml
+
+monitor:
+  timezone: ${MONITOR_TIMEZONE:Asia/Shanghai}
+  disk-path: ${MONITOR_DISK_PATH:.}
+  detail-retention-days: ${MONITOR_DETAIL_RETENTION_DAYS:30}
+
+maid:
+  avatar-directory: ${MAID_AVATAR_DIRECTORY:/opt/aiprovider/characters}
+
+tencent-cloud:
+  secret-id: ${TENCENT_CLOUD_SECRET_ID:}
+  secret-key: ${TENCENT_CLOUD_SECRET_KEY:}
+  region: ${TENCENT_CLOUD_REGION:ap-shanghai}
+  lighthouse-instance-id: ${TENCENT_CLOUD_LIGHTHOUSE_INSTANCE_ID:lhins-20ht1gis}
+
+twitter:
+  publish-mode: ${TWITTER_PUBLISH_MODE:client}
+  storage-directory: ${TWITTER_STORAGE_DIRECTORY:/opt/aimaid/twitter-media}
+  session-encryption-key: ${TWITTER_SESSION_ENCRYPTION_KEY:}
+  headless: ${TWITTER_HEADLESS:true}
+  navigation-timeout-ms: ${TWITTER_NAVIGATION_TIMEOUT_MS:60000}
+  browser-executable-path: ${TWITTER_BROWSER_EXECUTABLE_PATH:}

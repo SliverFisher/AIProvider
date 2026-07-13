@@ -1,6 +1,11 @@
 .env
 *.pem
 login.sh
+deploy/production.local.json
 AIProvider-back/target/
 AIProvider-front/dist/
+AIProvider-front/coverage/
 AIProvider-front/node_modules/
+ComfyUIAgent/bin/
+ComfyUIAgent/obj/
+ComfyUIAgent/appsettings.json

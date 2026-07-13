@@ -1,0 +1,35 @@
+{
+  "manifest_version": 3,
+  "name": "AIProvider X Publisher",
+  "version": "2.1.0",
+  "description": "Uses the current Chrome X session to publish tasks created in AIProvider.",
+  "permissions": ["tabs", "cookies", "storage", "alarms"],
+  "host_permissions": [
+    "https://x.com/*",
+    "https://twitter.com/*",
+    "https://upload.x.com/*",
+    "https://upload.twitter.com/*",
+    "https://abs.twimg.com/*",
+    "http://127.0.0.1:32145/*",
+    "http://124.222.185.195/*",
+    "https://msg-drag-chargers-twist.trycloudflare.com/*",
+    "http://localhost:5173/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "http://124.222.185.195/*",
+        "https://msg-drag-chargers-twist.trycloudflare.com/*",
+        "http://localhost:5173/*"
+      ],
+      "js": ["frontend-bridge.js"],
+      "run_at": "document_start"
+    }
+  ],
+  "action": {
+    "default_title": "AIProvider X Publisher"
+  }
+}
