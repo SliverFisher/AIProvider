@@ -820,7 +820,7 @@ export default function ComfyLocalWorkbench({ mode = "workbench", active = true 
     setGalleryWorkflowFilter("all");
     setGalleryTransparencyFilter("all");
     const source = gallerySourcesRef.current[mode];
-    await loadGalleryPage(token, mode, source.page || 1);
+    if (!source.loadedAt) await loadGalleryPage(token, mode, source.page || 1);
   };
   const loadOutputImages = async (images, authToken, includeResultUrl = false) => Promise.all(
     (images || []).map(async (image) => {

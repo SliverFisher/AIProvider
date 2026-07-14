@@ -279,6 +279,7 @@ describe("Comfy image generation flow", () => {
   });
 
   it("reuses cached image addresses when switching between local images and assets", async () => {
+    submitted = true;
     render(<ComfyLocalWorkbench />);
     await screen.findByAltText("历史生成结果");
     expect(URL.createObjectURL).toHaveBeenCalledTimes(1);
@@ -288,10 +289,12 @@ describe("Comfy image generation flow", () => {
     await waitFor(() => expect(URL.createObjectURL).toHaveBeenCalledTimes(2));
 
     fireEvent.click(screen.getByRole("button", { name: "本机图片" }));
-    await waitFor(() => expect(galleryRequests).toBe(2));
+    await waitFor(() => expect(screen.getByAltText("历史生成结果")).toBeTruthy());
     fireEvent.click(screen.getByRole("button", { name: "我的资产" }));
-    await waitFor(() => expect(assetRequests).toBe(2));
+    await waitFor(() => expect(screen.getByAltText("历史生成结果")).toBeTruthy());
 
+    expect(galleryRequests).toBe(1);
+    expect(assetRequests).toBe(1);
     expect(URL.createObjectURL).toHaveBeenCalledTimes(2);
   });
 
