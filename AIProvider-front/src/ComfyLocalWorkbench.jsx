@@ -613,35 +613,47 @@ export default function ComfyLocalWorkbench({ mode = "workbench", active = true 
     saved.forEach((item) => poll(item.id, authToken, item.finalOutputNodeId, item.progressPlan, item));
     localStorage.removeItem("comfy_active_task");
   };
-  const dehydrateGalleryEntries = (entries) => entries.map((item) => ({
-    ...item,
-    imageUrl: null,
-    images: (item.images || []).map(({ url, ...image }) => image),
-  }));
-  const releaseCachedGalleryImages = (mode) => {
-    const cached = galleryCache.current[mode];
-    if (!cached?.hydrated) return;
-    cached.entries.forEach((item) => (item.images || []).forEach((image) => {
-      if (image.url) URL.revokeObjectURL(image.url);
+  const galleryImageAddress = (image, assets) =>
+    `${assets ? "assets" : "output"}::${image.path || image.localUrl || image.filename || ""}`;
+  const releaseReplacedGalleryImages = (previousEntries, nextEntries) => {
+    const retainedUrls = new Set(nextEntries.flatMap((item) => (item.images || []).map((image) => image.url).filter(Boolean)));
+    previousEntries.forEach((item) => (item.images || []).forEach((image) => {
+      if (image.url && !retainedUrls.has(image.url)) URL.revokeObjectURL(image.url);
     }));
-    galleryCache.current[mode] = { ...cached, entries: dehydrateGalleryEntries(cached.entries), hydrated: false };
   };
-  const hydrateGalleryEntries = async (entries, assets, authToken) => mapLimit(
+  const hydrateGalleryEntries = async (entries, assets, authToken, cachedEntries = []) => {
+    const cachedImages = new Map(
+      cachedEntries.flatMap((item) => (item.images || [])
+        .filter((image) => image.url)
+        .map((image) => [galleryImageAddress(image, assets), image])),
+    );
+    return mapLimit(
     entries, 6, async (item) => {
       const settledImages = await Promise.allSettled(
         (item.images || []).map(async (image) => {
+          const cachedImage = cachedImages.get(galleryImageAddress(image, assets));
+          const recordedTransparency = item.form?.generateTransparent ?? item.generateTransparent;
+          if (cachedImage?.url) {
+            return {
+              ...image,
+              url: cachedImage.url,
+              transparent: typeof recordedTransparency === "boolean"
+                ? recordedTransparency
+                : image.transparent ?? cachedImage.transparent ?? null,
+            };
+          }
           const query = new URLSearchParams({ path: image.path });
           const response = await call(`${assets ? "/api/assets/file" : "/api/gallery/file"}?${query}`, {}, 30000, authToken);
           if (!response.ok) throw new Error("missing image");
           const blob = await response.blob();
-          const recordedTransparency = item.form?.generateTransparent ?? item.generateTransparent;
           return { ...image, url: URL.createObjectURL(blob), transparent: typeof recordedTransparency === "boolean" ? recordedTransparency : image.transparent ?? null };
         }),
       );
       const loadedImages = settledImages.filter((result) => result.status === "fulfilled").map((result) => result.value);
       return { ...item, prompt: item.prompt || "", count: loadedImages.length, imageUrl: loadedImages[0]?.url || null, images: loadedImages };
     },
-  );
+    );
+  };
   const loadHistory = async (authToken, mode = galleryMode, page = 1) => {
     const assets = mode === "assets";
     const response = assets
@@ -659,18 +671,18 @@ export default function ComfyLocalWorkbench({ mode = "workbench", active = true 
       images: [{ path: item.localPath, localUrl: item.localUrl, filename: item.fileName, sizeBytes: item.fileSize, width: item.width, height: item.height }],
     })) : payload.items || [];
     const limitedSourceItems = limitGalleryImages(sourceItems);
-    const entries = await hydrateGalleryEntries(limitedSourceItems, assets, authToken);
     const previousCache = galleryCache.current[mode];
-    if (previousCache) releaseCachedGalleryImages(mode);
+    const entries = await hydrateGalleryEntries(limitedSourceItems, assets, authToken, previousCache?.entries || []);
     const visibleEntries = entries.filter((item) => item.images.length > 0);
+    if (previousCache) releaseReplacedGalleryImages(previousCache.entries, visibleEntries);
     const pageState = assets ? { page: payload.page || page, pages: payload.pages || 0, total: payload.total || 0 } : null;
-    galleryCache.current[mode] = { entries: visibleEntries, pageState, loadedAt: Date.now(), hydrated: true };
+    galleryCache.current[mode] = { entries: visibleEntries, pageState, loadedAt: Date.now() };
     setHistory(visibleEntries);
   };
   const updateGalleryHistory = (updater) => setHistory((current) => {
     const next = typeof updater === "function" ? updater(current) : updater;
     const cached = galleryCache.current[galleryMode];
-    galleryCache.current[galleryMode] = { entries: next, pageState: galleryMode === "assets" ? assetPage : cached?.pageState || null, loadedAt: Date.now(), hydrated: true };
+    galleryCache.current[galleryMode] = { entries: next, pageState: galleryMode === "assets" ? assetPage : cached?.pageState || null, loadedAt: Date.now() };
     return next;
   });
   const updateAssetPage = (updater) => setAssetPage((current) => {
@@ -681,21 +693,18 @@ export default function ComfyLocalWorkbench({ mode = "workbench", active = true 
   });
   const switchGallery = async (mode) => {
     if (mode === galleryMode) return;
-    releaseCachedGalleryImages(galleryMode);
     setGalleryMode(mode);
-    setHistory([]);
     setSelectionMode(false);
     setSelectedImages(new Set());
     setGalleryWorkflowFilter("all");
     setGalleryTransparencyFilter("all");
     const cached = galleryCache.current[mode];
     if (cached) {
-      const entries = cached.hydrated ? cached.entries : await hydrateGalleryEntries(cached.entries, mode === "assets", token);
-      galleryCache.current[mode] = { ...cached, entries, hydrated: true, loadedAt: Date.now() };
-      setHistory(entries);
+      setHistory(cached.entries);
       if (cached.pageState) setAssetPage(cached.pageState);
       return;
     }
+    setHistory([]);
     await loadHistory(token, mode, 1);
   };
   const loadOutputImages = async (images, authToken, includeResultUrl = false) => Promise.all(

@@ -56,6 +56,7 @@ describe("Comfy image generation flow", () => {
   let submitted;
   let moved;
   let galleryRequests;
+  let assetRequests;
   let externalRun;
   let externalQueuePoll;
   let externalGalleryReady;
@@ -73,6 +74,7 @@ describe("Comfy image generation flow", () => {
     submitted = false;
     moved = false;
     galleryRequests = 0;
+    assetRequests = 0;
     externalRun = false;
     externalQueuePoll = 0;
     externalGalleryReady = false;
@@ -94,7 +96,10 @@ describe("Comfy image generation flow", () => {
       if (url.endsWith("/api/local-workflows/settings")) return json({ directory: "F:\\ComfyUI\\user\\default\\workflows", exists: true });
       if (url.endsWith("/api/local-workflows")) return json({ directory: "F:\\ComfyUI\\user\\default\\workflows", workflows: [workflow, workflow2, cutoutWorkflow, interactiveWorkflow], rejected: [] });
       if (url.includes("/api/comfy-presets")) return json({ code: 200, data: [{ id: 2, title: "扶她0", defaultPreset: presetIsDefault, outputFolder: "aimaid", parameters: { positivePrompt: "preset prompt", width: 1080, height: 1920 } }] });
-      if (url.startsWith("/api/assets?")) return json({ code: 200, data: { page: 1, pages: 1, total: 1, items: [{ id: 12, platform: "Windows", localPath: "C:\\assets\\saved.png", localUrl: "http://127.0.0.1:32145/api/assets/file?path=saved.png", fileName: "saved.png", fileSize: 8 }] } });
+      if (url.startsWith("/api/assets?")) {
+        assetRequests += 1;
+        return json({ code: 200, data: { page: 1, pages: 1, total: 1, items: [{ id: 12, platform: "Windows", localPath: "C:\\assets\\saved.png", localUrl: "http://127.0.0.1:32145/api/assets/file?path=saved.png", fileName: "saved.png", fileSize: 8 }] } });
+      }
       if (url.endsWith("/api/twitter/accounts")) return json({ code: 200, data: [{ id: 2, username: "tester", sessionStatus: "CONNECTED" }] });
       if (url.endsWith("/api/twitter/posts/local-scheduled") && options.method === "POST") {
         savedTwitterTask = options.body;
@@ -265,6 +270,23 @@ describe("Comfy image generation flow", () => {
     expect(screen.queryByRole("textbox", { name: "新方案名称" })).toBeNull();
     expect(screen.queryByRole("button", { name: "保存当前配置" })).toBeNull();
     expect(galleryRequests).toBe(requestsBeforeSwitch);
+  });
+
+  it("reuses cached image addresses when switching between local images and assets", async () => {
+    render(<ComfyLocalWorkbench />);
+    await screen.findByAltText("历史生成结果");
+    expect(URL.createObjectURL).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(screen.getByRole("button", { name: "我的资产" }));
+    await waitFor(() => expect(assetRequests).toBe(1));
+    await waitFor(() => expect(URL.createObjectURL).toHaveBeenCalledTimes(2));
+
+    fireEvent.click(screen.getByRole("button", { name: "本机图片" }));
+    fireEvent.click(screen.getByRole("button", { name: "我的资产" }));
+
+    expect(galleryRequests).toBe(1);
+    expect(assetRequests).toBe(1);
+    expect(URL.createObjectURL).toHaveBeenCalledTimes(2);
   });
 
   it("submits the workflow explicitly selected by the user", async () => {
