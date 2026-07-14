@@ -355,6 +355,12 @@ describe("Comfy image generation flow", () => {
     const parameters = screen.getByRole("region", { name: "工作流参数" });
     expect(chooser.contains(schemes)).toBe(true);
     expect(chooser.compareDocumentPosition(parameters) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.queryByRole("textbox", { name: "新 Prompt 方案名称" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "覆盖当前方案" })).toBeNull();
+    expect(screen.queryByText("正向提示词", { exact: true })).toBeNull();
+    expect(screen.queryByText("反向提示词", { exact: true })).toBeNull();
+    expect(screen.getByRole("textbox", { name: "正向提示词" })).toBeTruthy();
+    expect(screen.getByRole("textbox", { name: "反向提示词" })).toBeTruthy();
     expect(screen.getByRole("option", { name: "扶她0" }).value).toBe("2");
     fireEvent.change(schemes, { target: { value: "2" } });
     expect(screen.getByRole("textbox", { name: "正向提示词" }).value).toBe("preset prompt");

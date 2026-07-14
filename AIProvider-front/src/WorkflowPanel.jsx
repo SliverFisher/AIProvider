@@ -1,4 +1,4 @@
-import { ArrowDown, ArrowUp, FloppyDisk, Plus, Sparkle, UploadSimple, X } from "@phosphor-icons/react";
+import { ArrowDown, ArrowUp, Sparkle, UploadSimple, X } from "@phosphor-icons/react";
 import { useEffect, useState } from "react";
 import "./WorkflowPanel.css";
 import MaskPointEditor from "./MaskPointEditor";
@@ -130,7 +130,7 @@ function WorkflowField({ fieldKey, fieldSpec, value, workflow, referenceFile, on
     onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) setDraggingFile(false); }}
     onDrop={(event) => { setDraggingFile(false); onReferenceDrop?.("sourceImage", event); }}
   >待处理原图<input aria-label="待处理原图" type="file" accept="image/*" onChange={(event) => onReference("sourceImage", event)} /><span className={referenceUrl ? "has-image" : ""}>{referenceUrl ? <img src={referenceUrl} alt={referenceFile?.name || "待处理原图"} /> : <UploadSimple />}<em>{referenceFile?.name || "拖入本机图片，或点击选择"}</em></span></label>;
-  if (["positivePrompt", "negativePrompt", "loras"].includes(fieldKey)) return <label className={fieldKey === "positivePrompt" || fieldKey === "negativePrompt" ? "workflow-panel__prompt-field" : undefined}>{LABELS[fieldKey]}<textarea aria-label={LABELS[fieldKey]} rows={fieldKey === "positivePrompt" ? 9 : fieldKey === "negativePrompt" ? 7 : 3} value={value ?? ""} onChange={(event) => onChange(fieldKey, event.target.value)} /></label>;
+  if (["positivePrompt", "negativePrompt", "loras"].includes(fieldKey)) return <label className={fieldKey === "positivePrompt" || fieldKey === "negativePrompt" ? "workflow-panel__prompt-field" : undefined}>{fieldKey === "loras" && LABELS[fieldKey]}<textarea aria-label={LABELS[fieldKey]} rows={fieldKey === "positivePrompt" ? 9 : fieldKey === "negativePrompt" ? 7 : 3} value={value ?? ""} onChange={(event) => onChange(fieldKey, event.target.value)} /></label>;
   if (fieldKey === "checkpoint" && workflow.models?.length) return <label>{LABELS.checkpoint}<select aria-label={LABELS.checkpoint} value={value || workflow.models[0]} onChange={(event) => onChange(fieldKey, event.target.value)}>{workflow.models.map((model) => <option key={model} value={model}>{model}</option>)}</select></label>;
   if (SELECT_OPTIONS[fieldKey]) return <SelectField fieldKey={fieldKey} value={value} onChange={onChange} />;
   if (typeof value === "number" || ["width", "height", "batchSize", "seed", "steps", "cfg", "denoise", "secondPassSteps", "secondPassDenoise", "secondPassSeed"].includes(fieldKey)) return <NumberField fieldKey={fieldKey} fieldSpec={fieldSpec} value={value} onChange={onChange} />;
@@ -138,7 +138,7 @@ function WorkflowField({ fieldKey, fieldSpec, value, workflow, referenceFile, on
   return <label>{label}<input aria-label={label} value={value ?? ""} onChange={(event) => onChange(fieldKey, event.target.value)} /></label>;
 }
 
-export default function WorkflowPanel({ workflows, loading, workflow, fieldKeys, fieldSpecs, values, onWorkflowChange, onFieldChange, referenceFiles, onReference, onReferenceDrop, loraModels, loraModelsLoading, presets, presetQuery, onPresetChange, appliedPresetTitle, presetSaveName, onPresetSaveNameChange, onSavePreset, presetSaving, onGenerate, disabled }) {
+export default function WorkflowPanel({ workflows, loading, workflow, fieldKeys, fieldSpecs, values, onWorkflowChange, onFieldChange, referenceFiles, onReference, onReferenceDrop, loraModels, loraModelsLoading, presets, presetQuery, onPresetChange, onGenerate, disabled }) {
   const supportsPrompt = fieldKeys.includes("positivePrompt") || fieldKeys.includes("negativePrompt");
   const editorKey = fieldKeys.find((fieldKey) => fieldSpecs[fieldKey]?.nodeType === "MaskEditMEC" && fieldSpecs[fieldKey]?.input === "editor_data");
   const editorNodeId = editorKey ? fieldSpecs[editorKey]?.nodeId : null;
@@ -156,32 +156,22 @@ export default function WorkflowPanel({ workflows, loading, workflow, fieldKeys,
   return <div className="workflow-panel">
     <section className="workflow-panel__chooser" aria-label="选择工作流">
       <div className="workflow-panel__chooser-main">
-        <label>工作流<select aria-label="当前生成工作流" value={workflow?.id || ""} onChange={(event) => onWorkflowChange(event.target.value)}>
+        <select aria-label="当前生成工作流" value={workflow?.id || ""} onChange={(event) => onWorkflowChange(event.target.value)}>
           {!workflows.length && <option value="">{loading ? "正在读取工作流…" : "没有识别到可运行工作流"}</option>}
           {workflows.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
-        </select></label>
+        </select>
         <button className="comfy-submit workflow-panel__generate" type="button" onClick={onGenerate} disabled={disabled.blocked}><Sparkle />{disabled.busy ? "正在提交…" : "开始生成"}</button>
       </div>
       {supportsPrompt && <div className="workflow-panel__presets workflow-panel__presets--chooser">
-        <header><strong>Prompt 方案</strong><small>只回填正向和反向 Prompt</small></header>
         <select aria-label="Prompt 方案" value={presetQuery} onChange={(event) => onPresetChange(event.target.value)}>
           <option value="">请选择 Prompt 方案</option>
           {presets.map((preset) => <option key={preset.id} value={String(preset.id)}>{preset.title}</option>)}
         </select>
-        <div className="workflow-panel__preset-save">
-          <input aria-label="新 Prompt 方案名称" value={presetSaveName} maxLength="100" onChange={(event) => onPresetSaveNameChange(event.target.value)} placeholder="另存为新方案时填写名称" />
-          <div>
-            <button type="button" disabled={presetSaving || !presetSaveName.trim()} onClick={() => onSavePreset("new")}><Plus />另存为新方案</button>
-            <button type="button" disabled={presetSaving || !presetQuery} onClick={() => onSavePreset("overwrite")}><FloppyDisk />覆盖当前方案</button>
-          </div>
-        </div>
-        {!presets.length && <small>还没有 Prompt 方案。</small>}
-        {appliedPresetTitle && <div className="workflow-panel__preset-applied">已应用：{appliedPresetTitle}</div>}
       </div>}
     </section>
 
     {workflow ? <section className="workflow-panel__parameters" aria-label="工作流参数" key={workflow.id}>
-      <header><div><strong>工作流参数</strong><small>{fieldKeys.length} 项</small></div><span>{workflow.name}</span></header>
+      <header><div><strong>工作流参数</strong><small>{fieldKeys.length} 项</small></div></header>
       {basicFieldKeys.length ? <div className="workflow-panel__fields workflow-panel__fields--basic">{basicFieldKeys.map(renderField)}</div> : !advancedFieldKeys.length && <p role="alert">该工作流没有返回可编辑参数，请刷新工作流扫描结果。</p>}
       {editorKey && <MaskPointEditor file={referenceFiles.sourceImage} value={values[editorKey]} radius={Number(values[radiusKey] || 12)} onChange={(next) => onFieldChange(editorKey, next)} onRadiusChange={(next) => radiusKey && onFieldChange(radiusKey, next)} />}
       {workflow.capabilities?.generationAndCutout && <label className="workflow-panel__check workflow-panel__transparent"><input type="checkbox" checked={Boolean(values.generateTransparent)} onChange={(event) => onFieldChange("generateTransparent", event.target.checked)} /><span>透明背景</span></label>}
