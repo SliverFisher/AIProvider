@@ -831,6 +831,16 @@ string GetLocalWorkflowDirectory() {
 
 async Task<LocalWorkflowScanResult> ScanLocalWorkflows(IHttpClientFactory factory, string directory) {
     var result = new LocalWorkflowScanResult();
+    JsonObject? cachedObjectInfo = null;
+    async Task<JsonObject> GetObjectInfo() {
+        if (cachedObjectInfo != null) return cachedObjectInfo;
+        using var infoResponse = await factory.CreateClient("comfy").GetAsync("object_info");
+        if (!infoResponse.IsSuccessStatusCode)
+            throw new InvalidOperationException($"读取 ComfyUI 节点定义失败（HTTP {(int)infoResponse.StatusCode}）");
+        cachedObjectInfo = JsonNode.Parse(await infoResponse.Content.ReadAsStringAsync()) as JsonObject
+            ?? throw new InvalidOperationException("ComfyUI 节点定义不是有效 JSON");
+        return cachedObjectInfo;
+    }
     var files = Directory.EnumerateFiles(directory, "*.json", SearchOption.AllDirectories)
         .OrderBy(path => path, StringComparer.OrdinalIgnoreCase).Take(200).ToArray();
     foreach (var path in files) {
@@ -840,7 +850,7 @@ async Task<LocalWorkflowScanResult> ScanLocalWorkflows(IHttpClientFactory factor
             if (info.Length > 5 * 1024 * 1024) throw new InvalidOperationException("文件超过 5 MB");
             var raw = await File.ReadAllTextAsync(path);
             var source = JsonNode.Parse(raw) as JsonObject ?? throw new InvalidOperationException("JSON 根节点不是对象");
-            var prompt = IsApiWorkflow(source) ? source : await ConvertLocalWorkflow(factory, raw);
+            var prompt = IsApiWorkflow(source) ? source : await ConvertLocalWorkflow(factory, raw, GetObjectInfo);
             result.Workflows.Add(BuildLocalWorkflow(relative, info.LastWriteTimeUtc, prompt));
         } catch (Exception ex) {
             result.Rejected.Add(new LocalWorkflowRejection { Path = relative, Message = ex.Message });
@@ -853,15 +863,21 @@ bool IsApiWorkflow(JsonObject workflow) => workflow.Count > 0 &&
     !workflow.ContainsKey("nodes") && !workflow.ContainsKey("links") &&
     workflow.All(entry => entry.Value is JsonObject node && node["class_type"] != null && node["inputs"] is JsonObject);
 
-async Task<JsonObject> ConvertLocalWorkflow(IHttpClientFactory factory, string raw) {
+async Task<JsonObject> ConvertLocalWorkflow(IHttpClientFactory factory, string raw, Func<Task<JsonObject>> getObjectInfo) {
     using var content = new StringContent(raw, System.Text.Encoding.UTF8, "application/json");
     using var response = await factory.CreateClient("comfy").PostAsync("workflow/convert", content);
     var converted = await response.Content.ReadAsStringAsync();
-    if (!response.IsSuccessStatusCode)
+    JsonObject prompt;
+    if (response.IsSuccessStatusCode) {
+        prompt = JsonNode.Parse(converted) as JsonObject ?? throw new InvalidOperationException("转换器返回了无效 JSON");
+    } else if (response.StatusCode is HttpStatusCode.NotFound or HttpStatusCode.MethodNotAllowed) {
+        var uiWorkflow = JsonNode.Parse(raw) as JsonObject ?? throw new InvalidOperationException("界面工作流不是有效 JSON 对象");
+        prompt = WorkflowConverter.Convert(uiWorkflow, await getObjectInfo());
+    } else {
         throw new InvalidOperationException(response.StatusCode == HttpStatusCode.NotFound
             ? "ComfyUI 未安装工作流转换器"
             : $"转换失败（HTTP {(int)response.StatusCode}）");
-    var prompt = JsonNode.Parse(converted) as JsonObject ?? throw new InvalidOperationException("转换器返回了无效 JSON");
+    }
     var source = JsonNode.Parse(raw) as JsonObject;
     if (source?["nodes"] is JsonArray sourceNodes) {
         foreach (var entry in prompt.Where(item => item.Value?["class_type"]?.GetValue<string>() == "Prompt (LoraManager)")) {
