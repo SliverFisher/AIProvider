@@ -107,6 +107,8 @@ describe("Comfy image generation flow", () => {
     bridgeRequests = [];
     vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} });
     vi.stubGlobal("confirm", vi.fn(() => true));
+    vi.stubGlobal("ClipboardItem", class { constructor(items) { this.items = items; } });
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: { write: vi.fn(async () => {}), writeText: vi.fn(async () => {}) } });
     vi.stubGlobal("fetch", vi.fn(async (input, options = {}) => {
       const url = String(input);
       if (url.startsWith("http://127.0.0.1:32145")) bridgeRequests.push(url);
@@ -355,8 +357,9 @@ describe("Comfy image generation flow", () => {
     const parameters = screen.getByRole("region", { name: "工作流参数" });
     expect(chooser.contains(schemes)).toBe(true);
     expect(chooser.compareDocumentPosition(parameters) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(screen.queryByRole("textbox", { name: "新 Prompt 方案名称" })).toBeNull();
-    expect(screen.queryByRole("button", { name: "覆盖当前方案" })).toBeNull();
+    expect(screen.getByRole("textbox", { name: "新 Prompt 方案名称" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "另存为方案" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "覆盖方案" })).toBeTruthy();
     expect(screen.queryByText("正向提示词", { exact: true })).toBeNull();
     expect(screen.queryByText("反向提示词", { exact: true })).toBeNull();
     expect(screen.getByRole("textbox", { name: "正向提示词" })).toBeTruthy();
@@ -520,6 +523,35 @@ describe("Comfy image generation flow", () => {
     await waitFor(() => expect(deletedPaths).toEqual(["aimaid/done-2.png"]));
     expect(screen.getByText("done.png")).toBeTruthy();
     expect(screen.getByText("1 / 1")).toBeTruthy();
+  });
+
+  it("copies and deletes the current large image from buttons, shortcuts, and the context menu", async () => {
+    multiImageGallery = true;
+    render(<ComfyLocalWorkbench />);
+    const images = await screen.findAllByAltText("历史生成结果");
+    fireEvent.click(images[0].closest("button"));
+
+    fireEvent.click(screen.getByRole("button", { name: "复制当前图片" }));
+    await waitFor(() => expect(navigator.clipboard.write).toHaveBeenCalledTimes(1));
+
+    fireEvent.keyDown(window, { key: "c", ctrlKey: true });
+    await waitFor(() => expect(navigator.clipboard.write).toHaveBeenCalledTimes(2));
+
+    fireEvent.keyDown(window, { key: "c", metaKey: true });
+    await waitFor(() => expect(navigator.clipboard.write).toHaveBeenCalledTimes(3));
+
+    fireEvent.contextMenu(document.querySelector(".history-lightbox"));
+    fireEvent.click(screen.getByRole("button", { name: "复制图片" }));
+    await waitFor(() => expect(navigator.clipboard.write).toHaveBeenCalledTimes(4));
+
+    fireEvent.keyDown(screen.getByRole("textbox", { name: "正向提示词" }), { key: "Delete" });
+    expect(screen.queryByText("只删除当前这张本机图片？此操作不可恢复。")).toBeNull();
+
+    fireEvent.keyDown(window, { key: "Delete" });
+    expect(screen.getByText("只删除当前这张本机图片？此操作不可恢复。")).toBeTruthy();
+    expect(deletedPaths).toEqual([]);
+    fireEvent.click(screen.getByRole("button", { name: "确认删除" }));
+    await waitFor(() => expect(deletedPaths).toEqual(["aimaid/done.png"]));
   });
 
   it("shows node details to the right of the local and asset tabs", async () => {

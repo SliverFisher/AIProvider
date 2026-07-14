@@ -1231,6 +1231,24 @@ export default function ComfyLocalWorkbench({ mode = "workbench", active = true 
       setNotice(`请选择文本后复制${label}`);
     }
   };
+  const copyGalleryImage = async (image) => {
+    try {
+      const response = await fetch(image.url);
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const blob = await response.blob();
+      const type = blob.type || (image.filename?.toLowerCase().endsWith(".png") ? "image/png" : "image/jpeg");
+      await navigator.clipboard.write([new ClipboardItem({ [type]: blob })]);
+      setNotice("图片已复制");
+    } catch (exception) {
+      setError(`复制图片失败：${exception.message}`);
+    }
+  };
+  const requestViewerDelete = (item, image) => setDeleteConfirm({
+    kind: "item",
+    item,
+    image,
+    message: item.source === "asset" ? "永久删除这张资产图片？此操作不可恢复。" : "只删除当前这张本机图片？此操作不可恢复。",
+  });
   const closeDetail = () => {
     setDetail(null);
   };
@@ -1267,9 +1285,20 @@ export default function ComfyLocalWorkbench({ mode = "workbench", active = true 
   useEffect(() => {
     if (!detail) return undefined;
     const handleViewerKey = (event) => {
-      if (!["ArrowLeft", "ArrowRight"].includes(event.key) || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
       const target = event.target;
       if (target instanceof HTMLElement && (target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName))) return;
+      const currentImage = detail.images[detail.index];
+      if ((event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey && event.key.toLowerCase() === "c") {
+        event.preventDefault();
+        copyGalleryImage(currentImage);
+        return;
+      }
+      if (event.key === "Delete" && !event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey) {
+        event.preventDefault();
+        requestViewerDelete(currentImage.task, currentImage);
+        return;
+      }
+      if (!["ArrowLeft", "ArrowRight"].includes(event.key) || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
       event.preventDefault();
       setDetail((current) => current?.images.length
         ? { ...current, index: (current.index + (event.key === "ArrowLeft" ? -1 : 1) + current.images.length) % current.images.length }
@@ -1277,7 +1306,7 @@ export default function ComfyLocalWorkbench({ mode = "workbench", active = true 
     };
     window.addEventListener("keydown", handleViewerKey);
     return () => window.removeEventListener("keydown", handleViewerKey);
-  }, [Boolean(detail)]);
+  }, [detail]);
   const galleryImages = history.flatMap((item) =>
     (item.images || []).map((image) => ({
       item,
@@ -1544,12 +1573,18 @@ export default function ComfyLocalWorkbench({ mode = "workbench", active = true 
     const fromViewer = imageMenu.viewer;
     setImageMenu(null);
     if (fromViewer) {
-      setDeleteConfirm({ kind: "item", item: entry.item, image: entry.image, message: entry.item.source === "asset" ? "永久删除这张资产图片？此操作不可恢复。" : "只删除当前这张本机图片？此操作不可恢复。" });
+      requestViewerDelete(entry.item, entry.image);
       return;
     }
     setSelectedImages(new Set([entry.key]));
     setSelectionMode(true);
     setDeleteConfirm({ kind: "selected", message: entry.item.source === "asset" ? "永久删除这张资产图片？此操作不可恢复。" : "删除这张本机图片？此操作不可恢复。" });
+  };
+  const contextCopy = async () => {
+    const entry = contextEntry();
+    if (!entry) return;
+    setImageMenu(null);
+    await copyGalleryImage(entry.image);
   };
   const contextMigrate = () => {
     const entry = contextEntry();
@@ -2067,6 +2102,7 @@ export default function ComfyLocalWorkbench({ mode = "workbench", active = true 
         </div>
       )}
       {imageMenu && <div className="image-context-menu" style={{ left: imageMenu.x, top: imageMenu.y }} onClick={(event) => event.stopPropagation()}>
+        <button onClick={() => contextCopy()}><Copy />复制图片</button>
         <button className="danger" onClick={contextDelete}><Trash />删除</button>
         <button onClick={contextMigrate}><FolderOpen />迁移</button>
         <button onClick={() => openImageInfo(imageMenu.item, imageMenu.image)}><Info />详细</button>
@@ -2121,6 +2157,7 @@ export default function ComfyLocalWorkbench({ mode = "workbench", active = true 
                 <span>{detail.index + 1} / {detail.images.length}</span>
               </div>
               <div className="viewer-header-actions">
+                <button onClick={() => copyGalleryImage(detail.images[detail.index])} title="复制图片" aria-label="复制当前图片"><Copy /></button>
                 <button onClick={() => openImageInfo(detail.images[detail.index].task, detail.images[detail.index])} title="查看详细信息"><Info /></button>
                 <button onClick={closeDetail} title="关闭大图"><X /></button>
               </div>

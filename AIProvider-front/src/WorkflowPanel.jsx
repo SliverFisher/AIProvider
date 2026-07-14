@@ -1,4 +1,4 @@
-import { ArrowDown, ArrowUp, Sparkle, UploadSimple, X } from "@phosphor-icons/react";
+import { ArrowDown, ArrowUp, FloppyDisk, Plus, Sparkle, UploadSimple, X } from "@phosphor-icons/react";
 import { useEffect, useState } from "react";
 import "./WorkflowPanel.css";
 import MaskPointEditor from "./MaskPointEditor";
@@ -138,7 +138,7 @@ function WorkflowField({ fieldKey, fieldSpec, value, workflow, referenceFile, on
   return <label>{label}<input aria-label={label} value={value ?? ""} onChange={(event) => onChange(fieldKey, event.target.value)} /></label>;
 }
 
-export default function WorkflowPanel({ workflows, loading, workflow, fieldKeys, fieldSpecs, values, onWorkflowChange, onFieldChange, referenceFiles, onReference, onReferenceDrop, loraModels, loraModelsLoading, presets, presetQuery, onPresetChange, onGenerate, disabled }) {
+export default function WorkflowPanel({ workflows, loading, workflow, fieldKeys, fieldSpecs, values, onWorkflowChange, onFieldChange, referenceFiles, onReference, onReferenceDrop, loraModels, loraModelsLoading, presets, presetQuery, onPresetChange, presetSaveName, onPresetSaveNameChange, onSavePreset, presetSaving, onGenerate, disabled }) {
   const supportsPrompt = fieldKeys.includes("positivePrompt") || fieldKeys.includes("negativePrompt");
   const editorKey = fieldKeys.find((fieldKey) => fieldSpecs[fieldKey]?.nodeType === "MaskEditMEC" && fieldSpecs[fieldKey]?.input === "editor_data");
   const editorNodeId = editorKey ? fieldSpecs[editorKey]?.nodeId : null;
@@ -167,6 +167,11 @@ export default function WorkflowPanel({ workflows, loading, workflow, fieldKeys,
           <option value="">请选择 Prompt 方案</option>
           {presets.map((preset) => <option key={preset.id} value={String(preset.id)}>{preset.title}</option>)}
         </select>
+        <div className="workflow-panel__preset-save workflow-panel__preset-save--compact">
+          <input aria-label="新 Prompt 方案名称" value={presetSaveName} maxLength="100" onChange={(event) => onPresetSaveNameChange(event.target.value)} placeholder="方案名称" />
+          <button type="button" disabled={presetSaving || !presetSaveName.trim()} onClick={() => onSavePreset("new")}><Plus />另存为方案</button>
+          <button type="button" disabled={presetSaving || !presetQuery} onClick={() => onSavePreset("overwrite")}><FloppyDisk />覆盖方案</button>
+        </div>
       </div>}
     </section>
 
