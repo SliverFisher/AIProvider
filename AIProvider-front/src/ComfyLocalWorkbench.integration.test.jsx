@@ -282,10 +282,10 @@ describe("Comfy image generation flow", () => {
     await waitFor(() => expect(URL.createObjectURL).toHaveBeenCalledTimes(2));
 
     fireEvent.click(screen.getByRole("button", { name: "本机图片" }));
+    await waitFor(() => expect(galleryRequests).toBe(2));
     fireEvent.click(screen.getByRole("button", { name: "我的资产" }));
+    await waitFor(() => expect(assetRequests).toBe(2));
 
-    expect(galleryRequests).toBe(1);
-    expect(assetRequests).toBe(1);
     expect(URL.createObjectURL).toHaveBeenCalledTimes(2);
   });
 

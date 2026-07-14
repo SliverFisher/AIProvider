@@ -181,6 +181,7 @@ export default function ComfyLocalWorkbench({ mode = "workbench", active = true 
     workflowVersions = useRef(new Map()),
     workflowRefreshInFlight = useRef(false),
     taskSyncInFlight = useRef(false),
+    galleryModeRef = useRef("output"),
     galleryCache = useRef({ output: null, assets: null }),
     loadWorkflowsRef = useRef(null),
     defaultPresetApplied = useRef(""),
@@ -662,7 +663,7 @@ export default function ComfyLocalWorkbench({ mode = "workbench", active = true 
     const data = await readJson(response, assets ? "后端资产目录" : "本机图片目录");
     if (!response.ok || (assets && data.code !== 200)) throw new Error(data.message || `HTTP ${response.status}`);
     const payload = assets ? data.data || {} : data;
-    if (assets) setAssetPage({ page: payload.page || page, pages: payload.pages || 0, total: payload.total || 0 });
+    if (assets && galleryModeRef.current === mode) setAssetPage({ page: payload.page || page, pages: payload.pages || 0, total: payload.total || 0 });
     const sourceItems = assets ? (payload.items || []).map((item) => ({
       id: `asset-${item.id}`, assetId: item.id, source: "asset", platform: item.platform,
       prompt: item.prompt, negativePrompt: item.negativePrompt, loras: parseLoras(item.lorasJson), seed: item.seed, steps: item.steps,
@@ -677,7 +678,7 @@ export default function ComfyLocalWorkbench({ mode = "workbench", active = true 
     if (previousCache) releaseReplacedGalleryImages(previousCache.entries, visibleEntries);
     const pageState = assets ? { page: payload.page || page, pages: payload.pages || 0, total: payload.total || 0 } : null;
     galleryCache.current[mode] = { entries: visibleEntries, pageState, loadedAt: Date.now() };
-    setHistory(visibleEntries);
+    if (galleryModeRef.current === mode) setHistory(visibleEntries);
   };
   const updateGalleryHistory = (updater) => setHistory((current) => {
     const next = typeof updater === "function" ? updater(current) : updater;
@@ -692,7 +693,8 @@ export default function ComfyLocalWorkbench({ mode = "workbench", active = true 
     return next;
   });
   const switchGallery = async (mode) => {
-    if (mode === galleryMode) return;
+    if (mode === galleryModeRef.current) return;
+    galleryModeRef.current = mode;
     setGalleryMode(mode);
     setSelectionMode(false);
     setSelectedImages(new Set());
@@ -702,6 +704,7 @@ export default function ComfyLocalWorkbench({ mode = "workbench", active = true 
     if (cached) {
       setHistory(cached.entries);
       if (cached.pageState) setAssetPage(cached.pageState);
+      loadHistory(token, mode, cached.pageState?.page || 1).catch((e) => setError(e.message));
       return;
     }
     setHistory([]);
