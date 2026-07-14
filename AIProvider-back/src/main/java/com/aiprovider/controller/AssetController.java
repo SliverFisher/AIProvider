@@ -4,6 +4,7 @@ import com.aiprovider.common.Result;
 import com.aiprovider.model.dto.AssetBatchDTO;
 import com.aiprovider.model.dto.AssetDeleteDTO;
 import com.aiprovider.model.vo.AssetPageVO;
+import com.aiprovider.model.vo.AssetBatchResultVO;
 import com.aiprovider.service.AssetService;
 import org.springframework.web.bind.annotation.*;
 import java.util.Collections;
@@ -18,8 +19,8 @@ public class AssetController {
                                                @RequestParam(defaultValue = "100") int pageSize) {
         return Result.success(service.page(platform, page, pageSize));
     }
-    @PostMapping("/batch") public Result<Map<String,Integer>> save(@RequestBody AssetBatchDTO dto) {
-        return Result.success(Collections.singletonMap("saved", service.saveBatch(dto)));
+    @PostMapping("/batch") public Result<AssetBatchResultVO> save(@RequestBody AssetBatchDTO dto) {
+        return Result.success(service.saveBatch(dto));
     }
     @PostMapping("/delete") public Result<Map<String,Integer>> delete(@RequestBody AssetDeleteDTO dto) {
         return Result.success(Collections.singletonMap("deleted", service.delete(dto)));

@@ -7,14 +7,20 @@ import java.util.Map;
 
 @Mapper
 public interface AssetMapper {
-    @Insert("INSERT INTO c_GeneratedAssets(Platform,PathHash,LocalPath,LocalUrl,FileName,FileSize,Width,Height,Prompt,NegativePrompt,LorasJson,Seed,Steps,Cfg,Sampler,Scheduler,WorkflowId,GeneratedAt) " +
-            "VALUES(#{platform},#{pathHash},#{item.localPath},#{item.localUrl},#{item.fileName},#{item.fileSize},#{item.width},#{item.height},#{item.prompt},#{item.negativePrompt},#{item.lorasJson},#{item.seed},#{item.steps},#{item.cfg},#{item.sampler},#{item.scheduler},#{item.workflowId},#{item.generatedAt}) " +
-            "ON DUPLICATE KEY UPDATE LocalPath=VALUES(LocalPath),LocalUrl=VALUES(LocalUrl),FileName=VALUES(FileName),FileSize=VALUES(FileSize),Width=VALUES(Width),Height=VALUES(Height),Prompt=VALUES(Prompt),NegativePrompt=VALUES(NegativePrompt),LorasJson=VALUES(LorasJson),Seed=VALUES(Seed),Steps=VALUES(Steps),Cfg=VALUES(Cfg),Sampler=VALUES(Sampler),Scheduler=VALUES(Scheduler),WorkflowId=VALUES(WorkflowId),GeneratedAt=VALUES(GeneratedAt),UpdatedAt=CURRENT_TIMESTAMP(3)")
+    @Insert("INSERT INTO c_GeneratedAssets(Platform,PathHash,LocalPath,LocalUrl,FileName,FileSize,Width,Height,Prompt,NegativePrompt,LorasJson,Seed,Steps,Cfg,Sampler,Scheduler,WorkflowId,GeneratedAt,GenerationCompletedAt,GenerationDurationMs) " +
+            "VALUES(#{platform},#{pathHash},#{item.localPath},#{item.localUrl},#{item.fileName},#{item.fileSize},#{item.width},#{item.height},#{item.prompt},#{item.negativePrompt},#{item.lorasJson},#{item.seed},#{item.steps},#{item.cfg},#{item.sampler},#{item.scheduler},#{item.workflowId},#{item.generatedAt},#{item.generationCompletedAt},#{item.generationDurationMs}) " +
+            "ON DUPLICATE KEY UPDATE LocalPath=VALUES(LocalPath),LocalUrl=VALUES(LocalUrl),FileName=VALUES(FileName),FileSize=VALUES(FileSize),Width=VALUES(Width),Height=VALUES(Height),Prompt=VALUES(Prompt),NegativePrompt=VALUES(NegativePrompt),LorasJson=VALUES(LorasJson),Seed=VALUES(Seed),Steps=VALUES(Steps),Cfg=VALUES(Cfg),Sampler=VALUES(Sampler),Scheduler=VALUES(Scheduler),WorkflowId=VALUES(WorkflowId),GeneratedAt=VALUES(GeneratedAt),GenerationCompletedAt=VALUES(GenerationCompletedAt),GenerationDurationMs=VALUES(GenerationDurationMs),UpdatedAt=CURRENT_TIMESTAMP(3)")
     int upsert(@Param("platform") String platform, @Param("pathHash") String pathHash, @Param("item") AssetItemDTO item);
 
-    @Select("SELECT Id id,Platform platform,LocalPath localPath,LocalUrl localUrl,FileName fileName,FileSize fileSize,Width width,Height height,Prompt prompt,NegativePrompt negativePrompt,LorasJson lorasJson,Seed seed,Steps steps,Cfg cfg,Sampler sampler,Scheduler scheduler,WorkflowId workflowId,GeneratedAt generatedAt,CreatedAt createdAt " +
+    @Select("SELECT Id id,Platform platform,LocalPath localPath,LocalUrl localUrl,FileName fileName,FileSize fileSize,Width width,Height height,Prompt prompt,NegativePrompt negativePrompt,LorasJson lorasJson,Seed seed,Steps steps,Cfg cfg,Sampler sampler,Scheduler scheduler,WorkflowId workflowId,GeneratedAt generatedAt,GenerationCompletedAt generationCompletedAt,GenerationDurationMs generationDurationMs,CreatedAt createdAt " +
             "FROM c_GeneratedAssets WHERE Platform=#{platform} ORDER BY COALESCE(GeneratedAt,CreatedAt) DESC,Id DESC LIMIT #{limit} OFFSET #{offset}")
     List<Map<String,Object>> findPage(@Param("platform") String platform, @Param("limit") int limit, @Param("offset") int offset);
+
+    @Select("<script>SELECT Id id,Platform platform,LocalPath localPath,LocalUrl localUrl,FileName fileName,FileSize fileSize,Width width,Height height,Prompt prompt,NegativePrompt negativePrompt,LorasJson lorasJson,Seed seed,Steps steps,Cfg cfg,Sampler sampler,Scheduler scheduler,WorkflowId workflowId,GeneratedAt generatedAt,GenerationCompletedAt generationCompletedAt,GenerationDurationMs generationDurationMs,CreatedAt createdAt " +
+            "FROM c_GeneratedAssets WHERE Platform=#{platform} AND PathHash IN " +
+            "<foreach collection='pathHashes' item='pathHash' open='(' separator=',' close=')'>#{pathHash}</foreach> " +
+            "ORDER BY COALESCE(GenerationCompletedAt,GeneratedAt,CreatedAt) DESC,Id DESC</script>")
+    List<Map<String,Object>> findByPathHashes(@Param("platform") String platform, @Param("pathHashes") List<String> pathHashes);
 
     @Select("SELECT COUNT(*) FROM c_GeneratedAssets WHERE Platform=#{platform}")
     long count(@Param("platform") String platform);

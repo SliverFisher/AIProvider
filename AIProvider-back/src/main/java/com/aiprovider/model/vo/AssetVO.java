@@ -21,17 +21,20 @@ public class AssetVO {
     private final String scheduler;
     private final String workflowId;
     private final LocalDateTime generatedAt;
+    private final LocalDateTime generationCompletedAt;
+    private final Long generationDurationMs;
     private final LocalDateTime createdAt;
 
     public AssetVO(long id, String platform, String localPath, String localUrl, String fileName, long fileSize,
                    Integer width, Integer height, String prompt, String negativePrompt, String lorasJson, Long seed,
                    Integer steps, Double cfg, String sampler, String scheduler, String workflowId,
-                   LocalDateTime generatedAt, LocalDateTime createdAt) {
+                   LocalDateTime generatedAt, LocalDateTime generationCompletedAt, Long generationDurationMs, LocalDateTime createdAt) {
         this.id = id; this.platform = platform; this.localPath = localPath; this.localUrl = localUrl; this.fileName = fileName;
         this.fileSize = fileSize; this.width = width; this.height = height; this.prompt = prompt;
         this.negativePrompt = negativePrompt; this.lorasJson = lorasJson; this.seed = seed; this.steps = steps; this.cfg = cfg;
         this.sampler = sampler; this.scheduler = scheduler; this.workflowId = workflowId;
-        this.generatedAt = generatedAt; this.createdAt = createdAt;
+        this.generatedAt = generatedAt; this.generationCompletedAt = generationCompletedAt;
+        this.generationDurationMs = generationDurationMs; this.createdAt = createdAt;
     }
     public long getId() { return id; }
     public String getPlatform() { return platform; }
@@ -51,5 +54,7 @@ public class AssetVO {
     public String getScheduler() { return scheduler; }
     public String getWorkflowId() { return workflowId; }
     public LocalDateTime getGeneratedAt() { return generatedAt; }
+    public LocalDateTime getGenerationCompletedAt() { return generationCompletedAt; }
+    public Long getGenerationDurationMs() { return generationDurationMs; }
     public LocalDateTime getCreatedAt() { return createdAt; }
 }

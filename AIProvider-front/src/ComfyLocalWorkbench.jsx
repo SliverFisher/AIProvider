@@ -97,7 +97,7 @@ const mergeGalleryEntries = (mode, preferredEntries, fallbackEntries, limit = 10
 };
 const visibleGalleryEntries = (mode, source) => {
   const serverEntries = source.serverPage === source.page ? source.serverEntries : [];
-  return mode === "output" && source.page === 1
+  return source.page === 1
     ? mergeGalleryEntries(mode, source.recentEntries, serverEntries)
     : serverEntries;
 };
@@ -118,6 +118,48 @@ const parseLoras = (value) => {
   catch { return []; }
 };
 const loraDisplayName = (value) => String(value || "").replace(/\\/g, "/").split("/").pop().replace(/\.(safetensors|ckpt|pt)$/i, "");
+const assetRecordToGalleryEntry = (item) => ({
+  id: `asset-${item.id}`, assetId: item.id, source: "asset", platform: item.platform,
+  prompt: item.prompt, negativePrompt: item.negativePrompt, loras: parseLoras(item.lorasJson), seed: item.seed, steps: item.steps,
+  cfg: item.cfg, sampler: item.sampler, scheduler: item.scheduler, workflowId: item.workflowId,
+  width: item.width, height: item.height, createdAt: item.generatedAt || item.createdAt,
+  generationCompletedAt: item.generationCompletedAt, generationDurationMs: item.generationDurationMs,
+  images: [{ path: item.localPath, localUrl: item.localUrl, filename: item.fileName, sizeBytes: item.fileSize, width: item.width, height: item.height }],
+});
+const normalizeHistoryTimestamp = (value) => {
+  if (value == null || value === "") return null;
+  const numeric = Number(value);
+  if (Number.isFinite(numeric)) return numeric < 1e12 ? numeric * 1000 : numeric;
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : null;
+};
+const readGenerationTiming = (historyItem) => {
+  const messages = Array.isArray(historyItem?.status?.messages) ? historyItem.status.messages : [];
+  const timestamps = (eventName) => messages
+    .filter((message) => Array.isArray(message) && message[0] === eventName)
+    .map((message) => normalizeHistoryTimestamp(message[1]?.timestamp))
+    .filter(Number.isFinite);
+  const started = timestamps("execution_start");
+  const completed = timestamps("execution_success");
+  const startedAt = started.length ? Math.min(...started) : null;
+  const completedAt = completed.length ? Math.max(...completed) : null;
+  return {
+    generationStartedAt: startedAt ? new Date(startedAt).toISOString() : null,
+    generationCompletedAt: completedAt ? new Date(completedAt).toISOString() : null,
+    generationDurationMs: startedAt && completedAt && completedAt >= startedAt ? completedAt - startedAt : null,
+  };
+};
+const formatGenerationDuration = (value) => {
+  if (value == null || value === "") return "未记录";
+  const milliseconds = Number(value);
+  if (!Number.isFinite(milliseconds) || milliseconds < 0) return "未记录";
+  const totalSeconds = milliseconds / 1000;
+  if (totalSeconds < 60) return `${totalSeconds.toFixed(totalSeconds < 10 ? 1 : 0)} 秒`;
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = Math.round(totalSeconds % 60);
+  return hours ? `${hours} 小时 ${minutes} 分 ${seconds} 秒` : `${minutes} 分 ${seconds} 秒`;
+};
 const deadline = (ms = 8000) => AbortSignal.timeout(ms);
 async function readJson(response, label) {
   const text = await response.text();
@@ -155,6 +197,25 @@ async function detectImageTransparency(url) {
     const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
     for (let index = 3; index < pixels.length; index += 4) if (pixels[index] < 250) return true;
     return false;
+  } finally {
+    bitmap.close?.();
+  }
+}
+async function convertImageBlobToPng(blob) {
+  if (blob.type === "image/png") return blob;
+  if (typeof createImageBitmap !== "function") throw new Error("当前浏览器不支持图片格式转换");
+  const bitmap = await createImageBitmap(blob);
+  try {
+    const canvas = document.createElement("canvas");
+    canvas.width = bitmap.width;
+    canvas.height = bitmap.height;
+    const context = canvas.getContext("2d");
+    if (!context) throw new Error("无法创建图片复制画布");
+    context.drawImage(bitmap, 0, 0);
+    return await new Promise((resolve, reject) => canvas.toBlob(
+      (png) => png ? resolve(png) : reject(new Error("图片转换为 PNG 失败")),
+      "image/png",
+    ));
   } finally {
     bitmap.close?.();
   }
@@ -229,8 +290,10 @@ export default function ComfyLocalWorkbench({ mode = "workbench", active = true 
     galleryRequestVersions = useRef({ output: 0, assets: 0 }),
     comfyHistoryIds = useRef(new Set()),
     comfyHistoryLoadingIds = useRef(new Set()),
+    galleryCompletionRegisteredIds = useRef(new Set()),
     comfyHistoryInitialized = useRef(false),
     comfyHistorySyncInFlight = useRef(false),
+    historyTimingCache = useRef(new Map()),
     loadWorkflowsRef = useRef(null),
     defaultPresetApplied = useRef(""),
     viewerTransform = useRef(null);
@@ -698,6 +761,7 @@ export default function ComfyLocalWorkbench({ mode = "workbench", active = true 
               return {
                 ...image,
                 url: cachedImage.url,
+                blob: cachedImage.blob,
                 transparent: typeof recordedTransparency === "boolean"
                   ? recordedTransparency
                   : image.transparent ?? cachedImage.transparent ?? null,
@@ -707,13 +771,36 @@ export default function ComfyLocalWorkbench({ mode = "workbench", active = true 
             const response = await call(`${assets ? "/api/assets/file" : "/api/gallery/file"}?${query}`, {}, 30000, authToken);
             if (!response.ok) throw new Error("missing image");
             const blob = await response.blob();
-            return { ...image, url: URL.createObjectURL(blob), transparent: typeof recordedTransparency === "boolean" ? recordedTransparency : image.transparent ?? null };
+            return { ...image, blob, url: URL.createObjectURL(blob), transparent: typeof recordedTransparency === "boolean" ? recordedTransparency : image.transparent ?? null };
           }),
         );
         const loadedImages = settledImages.filter((result) => result.status === "fulfilled").map((result) => result.value);
         return { ...item, prompt: item.prompt || "", count: loadedImages.length, imageUrl: loadedImages[0]?.url || null, images: loadedImages };
       },
     );
+  };
+  const addRecentAssetRecords = async (records, authToken = token) => {
+    if (!records.length) return;
+    const current = gallerySourcesRef.current.assets;
+    const hydrated = await hydrateGalleryEntries(
+      records.map(assetRecordToGalleryEntry),
+      "assets",
+      authToken,
+      [...current.serverEntries, ...current.recentEntries],
+    );
+    replaceGallerySource("assets", (source) => {
+      const known = new Set([...source.serverEntries, ...source.recentEntries].flatMap((item) =>
+        (item.images || []).map((image) => galleryImageAddress("assets", image))));
+      const added = hydrated.reduce((count, item) => count + (item.images || []).filter((image) =>
+        !known.has(galleryImageAddress("assets", image))).length, 0);
+      const total = source.total + added;
+      return {
+        ...source,
+        recentEntries: mergeGalleryEntries("assets", hydrated, source.recentEntries),
+        total,
+        pages: total ? Math.ceil(total / 100) : 0,
+      };
+    });
   };
   const reconcileGalleryUrls = (entries, mode, cachedEntries) => {
     const cachedImages = new Map(cachedEntries.flatMap((item) => (item.images || [])
@@ -740,13 +827,7 @@ export default function ComfyLocalWorkbench({ mode = "workbench", active = true 
       const data = await readJson(response, assets ? "后端资产目录" : "本机图片目录");
       if (!response.ok || (assets && data.code !== 200)) throw new Error(data.message || `HTTP ${response.status}`);
       const payload = assets ? data.data || {} : data;
-      const sourceItems = assets ? (payload.items || []).map((item) => ({
-        id: `asset-${item.id}`, assetId: item.id, source: "asset", platform: item.platform,
-        prompt: item.prompt, negativePrompt: item.negativePrompt, loras: parseLoras(item.lorasJson), seed: item.seed, steps: item.steps,
-        cfg: item.cfg, sampler: item.sampler, scheduler: item.scheduler, workflowId: item.workflowId,
-        width: item.width, height: item.height, createdAt: item.generatedAt || item.createdAt,
-        images: [{ path: item.localPath, localUrl: item.localUrl, filename: item.fileName, sizeBytes: item.fileSize, width: item.width, height: item.height }],
-      })) : payload.items || [];
+      const sourceItems = assets ? (payload.items || []).map(assetRecordToGalleryEntry) : payload.items || [];
       const cachedAtStart = [...sourceBeforeRequest.serverEntries, ...sourceBeforeRequest.recentEntries];
       const hydrated = await hydrateGalleryEntries(limitGalleryImages(sourceItems), mode, authToken, cachedAtStart);
       if (galleryRequestVersions.current[mode] !== requestVersion) {
@@ -760,7 +841,7 @@ export default function ComfyLocalWorkbench({ mode = "workbench", active = true 
       const serverEntries = reconcileGalleryUrls(hydrated, mode, [...current.serverEntries, ...current.recentEntries]);
       const confirmedAddresses = new Set(serverEntries.flatMap((item) =>
         (item.images || []).map((image) => galleryImageAddress(mode, image))));
-      const recentEntries = mode === "output" && Number(payload.page || page) === 1
+      const recentEntries = Number(payload.page || page) === 1
         ? mapGalleryEntries(current.recentEntries, (image) =>
           confirmedAddresses.has(galleryImageAddress(mode, image)) ? null : image)
         : current.recentEntries;
@@ -871,11 +952,43 @@ export default function ComfyLocalWorkbench({ mode = "workbench", active = true 
       loadedAt: Date.now(),
     };
   });
-  const appendTaskToHistory = (promptId, task, loadedImages, authToken = token) => {
+  const recordLocalGeneratedImages = async (entry) => {
+    const items = (entry.images || []).map((image) => ({
+      promptId: String(entry.promptId),
+      imagePath: image.path,
+      fileName: image.filename,
+      workflowId: entry.workflowId,
+      workflowName: entry.workflowName,
+      prompt: entry.prompt,
+      negativePrompt: entry.negativePrompt,
+      lorasJson: JSON.stringify(parseLoras(entry.loras)),
+      seed: entry.seed,
+      steps: entry.steps,
+      cfg: entry.cfg,
+      sampler: entry.sampler,
+      scheduler: entry.scheduler,
+      width: image.width || entry.width,
+      height: image.height || entry.height,
+      taskCreatedAt: entry.createdAt,
+      generationCompletedAt: entry.generationCompletedAt,
+      generationDurationMs: entry.generationDurationMs,
+    }));
+    if (!items.length) throw new Error("本机生成记录没有精确图片路径");
+    const response = await fetch("/api/local-generated-images/batch", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ platform, items }),
+    });
+    const data = await readJson(response, "本机生成图片异步记录接口");
+    if (!response.ok || data.code !== 200) throw new Error(data.message || `HTTP ${response.status}`);
+  };
+  const appendTaskToHistory = (promptId, task, loadedImages, authToken = token, historyItem = null) => {
     if (!loadedImages.length) return;
     comfyHistoryIds.current.add(String(promptId));
-    const images = loadedImages.map(({ blob, ...image }) => ({ ...image, url: URL.createObjectURL(blob) }));
+    const images = loadedImages.map(({ blob, ...image }) => ({ ...image, blob, url: URL.createObjectURL(blob) }));
     const form = task?.form || {};
+    const timing = historyItem ? readGenerationTiming(historyItem) : {};
+    if (timing.generationCompletedAt) historyTimingCache.current.set(String(promptId), timing);
     const entry = {
       id: promptId,
       promptId,
@@ -892,9 +1005,37 @@ export default function ComfyLocalWorkbench({ mode = "workbench", active = true 
       width: form.width,
       height: form.height,
       createdAt: task?.createdAt || new Date().toISOString(),
+      ...timing,
       images,
     };
     addRecentOutputEntry(entry);
+    recordLocalGeneratedImages(entry).catch((exception) => reportLocalError(
+      "local-generated-image-record",
+      exception,
+      { promptId: String(promptId), path: "/api/local-generated-images/batch" },
+      authToken,
+    ));
+  };
+  const registerGalleryCompletion = async (promptId, historyItem, task, authToken) => {
+    const id = String(promptId);
+    if (galleryCompletionRegisteredIds.current.has(id)) return false;
+    const finalOutput = findFinalOutput(historyItem, task?.finalOutputNodeId);
+    const files = (finalOutput?.images || []).map((image) => image.path || [image.subfolder, image.filename].filter(Boolean).join("/")).filter(Boolean);
+    if (!files.length) return false;
+    const timing = readGenerationTiming(historyItem);
+    const response = await call("/api/gallery/complete", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        promptId: id,
+        files,
+        generationCompletedAt: timing.generationCompletedAt,
+        generationDurationMs: timing.generationDurationMs,
+      }),
+    }, 10000, authToken);
+    if (!response.ok) return false;
+    galleryCompletionRegisteredIds.current.add(id);
+    return true;
   };
   const appendCompletedHistoryItem = async (promptId, task, historyItem, authToken) => {
     const id = String(promptId);
@@ -903,8 +1044,9 @@ export default function ComfyLocalWorkbench({ mode = "workbench", active = true 
     try {
       const finalOutput = findFinalOutput(historyItem, task.finalOutputNodeId);
       if (!finalOutput) return true;
+      await registerGalleryCompletion(id, historyItem, task, authToken);
       const images = await loadOutputImages(finalOutput.images, authToken);
-      appendTaskToHistory(id, task, images, authToken);
+      appendTaskToHistory(id, task, images, authToken, historyItem);
       return true;
     } finally {
       comfyHistoryLoadingIds.current.delete(id);
@@ -925,6 +1067,14 @@ export default function ComfyLocalWorkbench({ mode = "workbench", active = true 
       const data = await readJson(response, "ComfyUI 最近历史");
       if (!response.ok || !data || Array.isArray(data)) throw new Error(data.message || `HTTP ${response.status}`);
       const ids = Object.keys(data);
+      const registrations = await Promise.allSettled(ids.map((id) => registerGalleryCompletion(
+        id,
+        data[id],
+        tasksRef.current.find((candidate) => String(candidate.id) === String(id)),
+        authToken,
+      )));
+      if (registrations.some((result) => result.status === "fulfilled" && result.value === true))
+        await loadGalleryPage(authToken, "output", gallerySourcesRef.current.output.page || 1);
       let newIds;
       if (!comfyHistoryInitialized.current) {
         const knownAddresses = new Set([
@@ -1186,9 +1336,10 @@ export default function ComfyLocalWorkbench({ mode = "workbench", active = true 
         polling.current.delete(promptId);
         const finalOutput = findFinalOutput(item, finalOutputNodeId);
         if (!finalOutput) throw new Error("历史结果中没有可展示的图片输出");
+        await registerGalleryCompletion(promptId, item, taskHint || tasksRef.current.find((task) => String(task.id) === String(promptId)), authToken);
         const loaded = await loadOutputImages(finalOutput.images, authToken, true);
         setResults(loaded.map(({ blob, ...image }) => image));
-        appendTaskToHistory(promptId, taskHint || tasksRef.current.find((task) => String(task.id) === String(promptId)), loaded, authToken);
+        appendTaskToHistory(promptId, taskHint || tasksRef.current.find((task) => String(task.id) === String(promptId)), loaded, authToken, item);
         removeActiveTask(promptId);
       } catch (e) {
         reportLocalError("task-poll", e, { promptId, path: `/comfy/history/${promptId}` }, authToken);
@@ -1210,17 +1361,53 @@ export default function ComfyLocalWorkbench({ mode = "workbench", active = true 
     }, 2000);
     polling.current.set(promptId, timer);
   };
-  const openHistory = (item, image) => {
+  const loadGenerationTiming = async (item) => {
+    const promptId = item.promptId;
+    if (item.source === "asset" || !promptId) return null;
+    if (item.generationCompletedAt) return {
+      generationStartedAt: item.generationStartedAt,
+      generationCompletedAt: item.generationCompletedAt,
+      generationDurationMs: item.generationDurationMs,
+    };
+    const cached = historyTimingCache.current.get(String(promptId));
+    if (cached) return cached;
+    try {
+      const response = await call(`/comfy/history/${encodeURIComponent(promptId)}`, {}, 10000, token);
+      const data = await readJson(response, "ComfyUI history");
+      const timing = readGenerationTiming(data?.[promptId]);
+      if (!timing.generationCompletedAt) return null;
+      historyTimingCache.current.set(String(promptId), timing);
+      return timing;
+    } catch (exception) {
+      reportLocalError("image-generation-timing", exception, { promptId, path: `/comfy/history/${promptId}` }, token);
+      return null;
+    }
+  };
+  const openHistory = async (item, image) => {
     const gallery = history.flatMap((entry) =>
       (entry.images || []).map((candidate) => ({ ...candidate, task: entry })),
     );
     const selectedKey = imageSelectionKey(item, image);
     const index = gallery.findIndex((candidate) => imageSelectionKey(candidate.task, candidate) === selectedKey);
     setDetail({ images: gallery, index: Math.max(0, index) });
+    const timing = await loadGenerationTiming(item);
+    if (!timing) return;
+    setDetail((current) => current ? {
+      ...current,
+      images: current.images.map((candidate) => item.promptId && String(candidate.task.promptId) === String(item.promptId)
+        ? { ...candidate, task: { ...candidate.task, ...timing } }
+        : candidate),
+    } : current);
   };
-  const openImageInfo = (item, image) => {
+  const openImageInfo = async (item, image) => {
     setImageMenu(null);
-    setInfoDetail({ item, image });
+    const cachedTiming = item.promptId ? historyTimingCache.current.get(String(item.promptId)) : null;
+    setInfoDetail({ item: cachedTiming ? { ...item, ...cachedTiming } : item, image });
+    const timing = await loadGenerationTiming(item);
+    if (!timing) return;
+    setInfoDetail((current) => current && item.promptId && String(current.item.promptId) === String(item.promptId)
+      ? { ...current, item: { ...current.item, ...timing } }
+      : current);
   };
   const copyInfo = async (value, label) => {
     if (!value) { setNotice(`${label}未记录`); return; }
@@ -1233,22 +1420,32 @@ export default function ComfyLocalWorkbench({ mode = "workbench", active = true 
   };
   const copyGalleryImage = async (image) => {
     try {
-      const response = await fetch(image.url);
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      const blob = await response.blob();
-      const type = blob.type || (image.filename?.toLowerCase().endsWith(".png") ? "image/png" : "image/jpeg");
-      await navigator.clipboard.write([new ClipboardItem({ [type]: blob })]);
+      if (!navigator.clipboard?.write || typeof ClipboardItem !== "function") throw new Error("当前浏览器不支持图片剪贴板");
+      const pngPromise = (image.blob
+        ? Promise.resolve(image.blob)
+        : fetch(image.url).then((response) => {
+          if (!response.ok) throw new Error(`读取图片失败（HTTP ${response.status}）`);
+          return response.blob();
+        }))
+        .then(convertImageBlobToPng);
+      await navigator.clipboard.write([new ClipboardItem({ "image/png": pngPromise })]);
       setNotice("图片已复制");
     } catch (exception) {
       setError(`复制图片失败：${exception.message}`);
     }
   };
-  const requestViewerDelete = (item, image) => setDeleteConfirm({
-    kind: "item",
-    item,
-    image,
-    message: item.source === "asset" ? "永久删除这张资产图片？此操作不可恢复。" : "只删除当前这张本机图片？此操作不可恢复。",
-  });
+  const requestViewerDelete = (item, image) => {
+    if (item.source !== "asset") {
+      performDeleteImage(item, image);
+      return;
+    }
+    setDeleteConfirm({
+      kind: "item",
+      item,
+      image,
+      message: "永久删除这张资产图片？此操作不可恢复。",
+    });
+  };
   const closeDetail = () => {
     setDetail(null);
   };
@@ -1287,6 +1484,13 @@ export default function ComfyLocalWorkbench({ mode = "workbench", active = true 
     const handleViewerKey = (event) => {
       const target = event.target;
       if (target instanceof HTMLElement && (target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName))) return;
+      if (event.key === "Escape") {
+        if (infoDetail || deleteConfirm) return;
+        event.preventDefault();
+        if (imageMenu) setImageMenu(null);
+        else closeDetail();
+        return;
+      }
       const currentImage = detail.images[detail.index];
       if ((event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey && event.key.toLowerCase() === "c") {
         event.preventDefault();
@@ -1306,7 +1510,7 @@ export default function ComfyLocalWorkbench({ mode = "workbench", active = true 
     };
     window.addEventListener("keydown", handleViewerKey);
     return () => window.removeEventListener("keydown", handleViewerKey);
-  }, [detail]);
+  }, [detail, infoDetail, deleteConfirm, imageMenu]);
   const galleryImages = history.flatMap((item) =>
     (item.images || []).map((image) => ({
       item,
@@ -1446,6 +1650,10 @@ export default function ComfyLocalWorkbench({ mode = "workbench", active = true 
   };
   const deleteSelected = () => {
     if (!selectedImages.size) return;
+    if (galleryMode === "output" && selectedImages.size === 1) {
+      performDeleteSelected();
+      return;
+    }
     setDeleteConfirm({
       kind: "selected",
       message: galleryMode === "assets"
@@ -1476,6 +1684,13 @@ export default function ComfyLocalWorkbench({ mode = "workbench", active = true 
     setBusy(true);
     setError("");
     try {
+      const sourceByPath = new Map();
+      for (const path of paths) {
+        const source = history.find((item) => (item.images || []).some((image) => String(image.path).toLowerCase() === String(path).toLowerCase()));
+        if (!source) continue;
+        const timing = await loadGenerationTiming(source);
+        sourceByPath.set(String(path).toLowerCase(), { ...source, ...(timing || {}) });
+      }
       const response = await call("/api/gallery/move", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1484,12 +1699,23 @@ export default function ComfyLocalWorkbench({ mode = "workbench", active = true 
       const data = await readJson(response, "批量迁移接口");
       if (!response.ok) throw new Error(data.message || "批量迁移失败");
       if (!Array.isArray(data.assets) || !data.assets.length) throw new Error("本机 Agent 版本过旧，图片已迁移但未返回资产登记信息；请更新并重启 Agent 后重试");
+      const assets = data.assets.map((asset) => {
+        const source = sourceByPath.get(String(asset.oldPath || "").toLowerCase());
+        return {
+          ...asset,
+          generationCompletedAt: source?.generationCompletedAt,
+          generationDurationMs: source?.generationDurationMs,
+        };
+      });
       const registerResponse = await fetch("/api/assets/batch", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ platform: data.platform || platform, items: data.assets || [] }),
+        body: JSON.stringify({ platform: data.platform || platform, items: assets }),
       });
       const registerData = await readJson(registerResponse, "后端资产保存接口");
       if (!registerResponse.ok || registerData.code !== 200) throw new Error(`图片已迁移，但后端资产保存失败：${registerData.message || registerResponse.status}`);
+      const registeredAssets = registerData.data?.items || [];
+      if (!registeredAssets.length) throw new Error("图片已迁移并写入后端，但后端没有返回新资产记录");
+      await addRecentAssetRecords(registeredAssets, token);
       setMoveDialog(false);
       setDirectMove(null);
       setSelectedImages(new Set());
@@ -1526,6 +1752,8 @@ export default function ComfyLocalWorkbench({ mode = "workbench", active = true 
           steps: source?.item.steps, cfg: source?.item.cfg, sampler: source?.item.sampler,
           scheduler: source?.item.scheduler, workflowId: source?.item.workflowId,
           generatedAt: source?.item.createdAt,
+          generationCompletedAt: source?.item.generationCompletedAt,
+          generationDurationMs: source?.item.generationDurationMs,
         };
       });
       const changed = movedAssets.filter((asset) => String(asset.oldPath).toLowerCase() !== String(asset.localPath).toLowerCase());
@@ -1536,6 +1764,9 @@ export default function ComfyLocalWorkbench({ mode = "workbench", active = true 
         });
         const registerData = await readJson(registerResponse, "后端资产保存接口");
         if (!registerResponse.ok || registerData.code !== 200) throw new Error(registerData.message || "迁移后的资产保存失败");
+        const registeredAssets = registerData.data?.items || [];
+        if (!registeredAssets.length) throw new Error("迁移后的资产已保存，但后端没有返回资产记录");
+        await addRecentAssetRecords(registeredAssets, token);
         const movedOldPaths = new Set(changed.map((asset) => String(asset.oldPath).toLowerCase()));
         const ids = entries.filter(({ image }) => movedOldPaths.has(String(image.path).toLowerCase())).map(({ item }) => item.assetId).filter(Boolean);
         if (ids.length) {
@@ -1572,19 +1803,28 @@ export default function ComfyLocalWorkbench({ mode = "workbench", active = true 
     if (!entry) return;
     const fromViewer = imageMenu.viewer;
     setImageMenu(null);
-    if (fromViewer) {
-      requestViewerDelete(entry.item, entry.image);
+    if (entry.item.source !== "asset") {
+      performDeleteImage(entry.item, entry.image);
       return;
     }
-    setSelectedImages(new Set([entry.key]));
-    setSelectionMode(true);
-    setDeleteConfirm({ kind: "selected", message: entry.item.source === "asset" ? "永久删除这张资产图片？此操作不可恢复。" : "删除这张本机图片？此操作不可恢复。" });
+    if (fromViewer) requestViewerDelete(entry.item, entry.image);
+    else setDeleteConfirm({ kind: "item", item: entry.item, image: entry.image, message: "永久删除这张资产图片？此操作不可恢复。" });
   };
   const contextCopy = async () => {
     const entry = contextEntry();
     if (!entry) return;
     setImageMenu(null);
     await copyGalleryImage(entry.image);
+  };
+  const contextOpenFolder = async () => {
+    const entry = contextEntry();
+    if (!entry) return;
+    setImageMenu(null);
+    try {
+      await openImageFolder(entry.item, entry.image);
+    } catch (exception) {
+      setError(`打开所在文件夹失败：${exception.message}`);
+    }
   };
   const contextMigrate = () => {
     const entry = contextEntry();
@@ -1815,10 +2055,7 @@ export default function ComfyLocalWorkbench({ mode = "workbench", active = true 
   return (
     <div className={`comfy-shell embedded local-comfy workflow-${form.workflowId}`}>
       <div className="comfy-section-title">
-        <div>
-          <span>本机图像生成工作台</span>
-          <h2>图像工坊</h2>
-        </div>
+        <div />
         <div className="workshop-title-side">
           <DynamicShowcase variant="workshop" />
           <small>提示词与图片只在这台电脑处理</small>
@@ -1945,19 +2182,19 @@ export default function ComfyLocalWorkbench({ mode = "workbench", active = true 
                     删除 {selectedImages.size || ""}
                   </button>
                   <button
-                    className="twitter-task-action"
-                    disabled={!selectedImages.size || selectedTwitterImages().length > 4}
-                    onClick={() => openTwitterTask().catch((e) => setError(e.message))}
-                  >
-                    <PaperPlaneTilt /> 添加到 Twitter 任务 {selectedTwitterImages().length || ""}
-                  </button>
-                  <button
                       className="move-action"
                       disabled={!selectedImages.size}
                       onClick={openMoveDialog}
                     >
                       迁移 {selectedImages.size || ""}
                     </button>
+                  <button
+                    className="twitter-task-action"
+                    disabled={!selectedImages.size || selectedTwitterImages().length > 4}
+                    onClick={() => openTwitterTask().catch((e) => setError(e.message))}
+                  >
+                    <PaperPlaneTilt /> 添加到 Twitter 任务 {selectedTwitterImages().length || ""}
+                  </button>
                   <button
                     onClick={() => {
                       setSelectionMode(false);
@@ -2040,7 +2277,6 @@ export default function ComfyLocalWorkbench({ mode = "workbench", active = true 
                   >
                     <img src={image.url} alt="历史生成结果" draggable="false" />
                     {item.source === "asset" && <span className="asset-platform-badge">{item.platform}</span>}
-                    {image.transparent === true && <span className="transparent-image-badge">透明</span>}
                     {selectionMode && (
                       <i className="selection-mark">
                         {selectedImages.has(selectionKey) ? "✓" : ""}
@@ -2065,7 +2301,7 @@ export default function ComfyLocalWorkbench({ mode = "workbench", active = true 
               <div><span>{directMove ? "单图迁移" : "批量迁移"}</span><h3>{directMove ? `迁移原图：${directMove.image.filename}` : `剪切 ${selectedImages.size} 张图片`}</h3></div>
               <button onClick={() => setMoveDialog(false)} aria-label="关闭迁移弹框"><X /></button>
             </header>
-            <p>图片会移动到 ComfyUI/output 下的目标文件夹；原任务历史将删除，完整任务参数会保存为目标文件夹内的迁移清单 JSON。</p>
+            <p>图片会直接移动到 ComfyUI/output 下的目标文件夹；迁移完成后原任务历史将删除。</p>
             <label>目标文件夹
               <select value={moveFolder} onChange={(e) => setMoveFolder(e.target.value)}>
                 <option value="">请选择文件夹</option>
@@ -2103,6 +2339,7 @@ export default function ComfyLocalWorkbench({ mode = "workbench", active = true 
       )}
       {imageMenu && <div className="image-context-menu" style={{ left: imageMenu.x, top: imageMenu.y }} onClick={(event) => event.stopPropagation()}>
         <button onClick={() => contextCopy()}><Copy />复制图片</button>
+        <button onClick={() => contextOpenFolder()}><FolderOpen />打开所在文件夹</button>
         <button className="danger" onClick={contextDelete}><Trash />删除</button>
         <button onClick={contextMigrate}><FolderOpen />迁移</button>
         <button onClick={() => openImageInfo(imageMenu.item, imageMenu.image)}><Info />详细</button>
@@ -2123,7 +2360,9 @@ export default function ComfyLocalWorkbench({ mode = "workbench", active = true 
             <span><small>工作流</small>{infoDetail.item.workflowName || workflows.find((entry) => entry.id === infoDetail.item.workflowId)?.name || infoDetail.item.workflowId || "未记录"}</span>
             <span><small>分辨率</small>{infoDetail.image.width || infoDetail.item.width || "-"} × {infoDetail.image.height || infoDetail.item.height || "-"}</span>
             <span><small>生成平台</small>{infoDetail.item.platform || platform || "未记录"}</span>
-            <span><small>创建时间</small>{infoDetail.item.createdAt ? new Date(infoDetail.item.createdAt).toLocaleString("zh-CN", { hour12: false }) : "未记录"}</span>
+            <span><small>任务创建时间</small>{infoDetail.item.createdAt ? new Date(infoDetail.item.createdAt).toLocaleString("zh-CN", { hour12: false }) : "未记录"}</span>
+            <span><small>生成完成时间</small>{infoDetail.item.generationCompletedAt ? new Date(infoDetail.item.generationCompletedAt).toLocaleString("zh-CN", { hour12: false }) : "未记录"}</span>
+            <span><small>生成时间</small>{formatGenerationDuration(infoDetail.item.generationDurationMs)}</span>
             <span><small>Seed / Steps / CFG</small>{infoDetail.item.seed ?? "-"} / {infoDetail.item.steps ?? "-"} / {infoDetail.item.cfg ?? "-"}</span>
             <span><small>采样器 / 调度器</small>{infoDetail.item.sampler || "-"} / {infoDetail.item.scheduler || "-"}</span>
           </div>
@@ -2155,6 +2394,12 @@ export default function ComfyLocalWorkbench({ mode = "workbench", active = true 
               <div className="viewer-file-title" title={detail.images[detail.index].filename || detail.images[detail.index].path || "图片"}>
                 <strong>{detail.images[detail.index].filename || detail.images[detail.index].path?.split(/[\\/]/).pop() || "图片"}</strong>
                 <span>{detail.index + 1} / {detail.images.length}</span>
+                <small>
+                  完成 {detail.images[detail.index].task.generationCompletedAt
+                    ? new Date(detail.images[detail.index].task.generationCompletedAt).toLocaleString("zh-CN", { hour12: false })
+                    : "未记录"}
+                  {" · "}生成 {formatGenerationDuration(detail.images[detail.index].task.generationDurationMs)}
+                </small>
               </div>
               <div className="viewer-header-actions">
                 <button onClick={() => copyGalleryImage(detail.images[detail.index])} title="复制图片" aria-label="复制当前图片"><Copy /></button>
@@ -2165,7 +2410,7 @@ export default function ComfyLocalWorkbench({ mode = "workbench", active = true 
             <div className="history-lightbox" onContextMenu={(event) => {
               event.preventDefault();
               const image = detail.images[detail.index];
-              setImageMenu({ x: Math.min(event.clientX, window.innerWidth - 190), y: Math.min(event.clientY, window.innerHeight - 155), item: image.task, image, viewer: true });
+              setImageMenu({ x: Math.min(event.clientX, window.innerWidth - 190), y: Math.min(event.clientY, window.innerHeight - 205), item: image.task, image, viewer: true });
             }}>
               <TransformWrapper
                 ref={viewerTransform}

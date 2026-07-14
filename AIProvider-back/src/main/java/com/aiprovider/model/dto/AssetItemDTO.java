@@ -22,6 +22,8 @@ public class AssetItemDTO {
     private String scheduler;
     private String workflowId;
     private LocalDateTime generatedAt;
+    private LocalDateTime generationCompletedAt;
+    private Long generationDurationMs;
 
     public String getLocalPath() { return localPath; }
     public void setLocalPath(String localPath) { this.localPath = localPath; }
@@ -60,4 +62,13 @@ public class AssetItemDTO {
         try { this.generatedAt = OffsetDateTime.parse(generatedAt).toLocalDateTime(); }
         catch (DateTimeParseException ignored) { this.generatedAt = LocalDateTime.parse(generatedAt); }
     }
+    public LocalDateTime getGenerationCompletedAt() { return generationCompletedAt; }
+    @JsonSetter("generationCompletedAt")
+    public void setGenerationCompletedAt(String generationCompletedAt) {
+        if (generationCompletedAt == null || generationCompletedAt.trim().isEmpty()) { this.generationCompletedAt = null; return; }
+        try { this.generationCompletedAt = OffsetDateTime.parse(generationCompletedAt).toLocalDateTime(); }
+        catch (DateTimeParseException ignored) { this.generationCompletedAt = LocalDateTime.parse(generationCompletedAt); }
+    }
+    public Long getGenerationDurationMs() { return generationDurationMs; }
+    public void setGenerationDurationMs(Long generationDurationMs) { this.generationDurationMs = generationDurationMs; }
 }

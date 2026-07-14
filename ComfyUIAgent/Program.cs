@@ -567,16 +567,20 @@ app.MapPost("/api/assets/move", (GalleryPathsRequest request) => {
     if (paths.Length == 0) return Results.BadRequest(new { success = false, message = "请选择要迁移的资产" });
     var destination = Path.GetFullPath(GetMigrationDirectory());
     Directory.CreateDirectory(destination);
-    var assets = new List<object>();
+    var planned = new List<(string Source, string Target)>();
+    var reservedTargets = new HashSet<string>(OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
     foreach (var path in paths) {
         var source = Path.GetFullPath(path);
         if (!File.Exists(source) || !IsGalleryImage(source)) throw new InvalidOperationException($"资产图片不存在：{path}");
         var target = Path.Combine(destination, Path.GetFileName(source));
-        if (!string.Equals(source, target, OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal)) {
-            var suffix = 1;
-            while (File.Exists(target)) target = Path.Combine(destination, $"{Path.GetFileNameWithoutExtension(source)}_{suffix++}{Path.GetExtension(source)}");
-            File.Move(source, target);
-        }
+        if (string.Equals(source, target, OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal) ||
+            File.Exists(target) || !reservedTargets.Add(target))
+            return Results.Conflict(new { success = false, message = $"{Path.GetFileName(source)} 已经迁移了" });
+        planned.Add((source, target));
+    }
+    var assets = new List<object>();
+    foreach (var (source, target) in planned) {
+        File.Move(source, target);
         var image = ToGalleryImage(new GalleryFile { FullPath = target, Path = target, Filename = Path.GetFileName(target), CreatedAt = new DateTimeOffset(File.GetLastWriteTime(target)) });
         assets.Add(new { oldPath = source, localPath = target,
             localUrl = $"http://127.0.0.1:32145/api/assets/file?path={Uri.EscapeDataString(target)}",
@@ -620,6 +624,20 @@ app.MapPost("/api/gallery/delete", async (GalleryPathsRequest request) => {
     return Results.Ok(new { success = true, deleted });
 }).DisableAntiforgery();
 
+app.MapPost("/api/gallery/complete", async (GalleryCompleteRequest request) => {
+    if (!Guid.TryParse(request.PromptId, out _)) return Results.BadRequest(new { success = false, message = "生成任务 ID 无效" });
+    var files = request.Files.Select(NormalizeRelativePath).Where(path => path.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+    if (files.Count == 0) return Results.BadRequest(new { success = false, message = "生成任务没有输出图片" });
+    foreach (var path in files) {
+        var file = ResolveGalleryPath(path, mustExist: true);
+        if (!IsGalleryImage(file)) return Results.BadRequest(new { success = false, message = $"生成输出不是图片：{path}" });
+    }
+    var updated = await CompleteGenerationRecord(request.PromptId, files, request.GenerationCompletedAt, request.GenerationDurationMs);
+    return updated
+        ? Results.Ok(new { success = true, promptId = request.PromptId, files })
+        : Results.NotFound(new { success = false, message = "生成任务索引不存在" });
+}).DisableAntiforgery();
+
 app.MapPost("/api/gallery/move", async (GalleryMoveRequest request) => {
     var paths = request.Paths.Select(NormalizeRelativePath).Where(path => path.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
     if (paths.Length == 0) return Results.BadRequest(new { success = false, message = "请选择要迁移的图片" });
@@ -631,54 +649,42 @@ app.MapPost("/api/gallery/move", async (GalleryMoveRequest request) => {
     var gallery = await ScanGallery(1000);
     var metadataByPath = gallery.SelectMany(item => item.Images.Select(image => new { image.Path, Item = item }))
         .ToDictionary(x => x.Path, x => x.Item, StringComparer.OrdinalIgnoreCase);
+    var planned = new List<(string OldPath, string NewPath, string Source, string Target)>();
+    var reservedTargets = new HashSet<string>(OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
+    foreach (var oldPath in paths) {
+        var source = ResolveGalleryPath(oldPath, mustExist: true);
+        if (!IsGalleryImage(source)) throw new InvalidOperationException($"不是可迁移的图片：{oldPath}");
+        var target = Path.Combine(destination, Path.GetFileName(source));
+        if (string.Equals(source, target, OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal) ||
+            File.Exists(target) || !reservedTargets.Add(target))
+            return Results.Conflict(new { success = false, message = $"{Path.GetFileName(source)} 已经迁移了" });
+        var newPath = externalDestination ? target : NormalizeRelativePath(Path.GetRelativePath(root, target));
+        planned.Add((oldPath, newPath, source, target));
+    }
     var moved = new List<(string OldPath, string NewPath, string Source, string Target)>();
-    var manifestItems = new JsonArray();
     try {
-        foreach (var oldPath in paths) {
-            var source = ResolveGalleryPath(oldPath, mustExist: true);
-            if (!IsGalleryImage(source)) throw new InvalidOperationException($"不是可迁移的图片：{oldPath}");
-            var target = Path.Combine(destination, Path.GetFileName(source));
-            var suffix = 1;
-            while (File.Exists(target)) target = Path.Combine(destination, $"{Path.GetFileNameWithoutExtension(source)}_{suffix++}{Path.GetExtension(source)}");
-            var newPath = externalDestination ? target : NormalizeRelativePath(Path.GetRelativePath(root, target));
-            if (string.Equals(oldPath, newPath, StringComparison.OrdinalIgnoreCase)) continue;
+        foreach (var (oldPath, newPath, source, target) in planned) {
             File.Move(source, target);
             moved.Add((oldPath, newPath, source, target));
-            metadataByPath.TryGetValue(oldPath, out var item);
-            manifestItems.Add(new JsonObject {
-                ["originalFileName"] = Path.GetFileName(source),
-                ["originalPath"] = oldPath,
-                ["newPath"] = newPath,
-                ["metadata"] = item == null ? null : JsonSerializer.SerializeToNode(new {
-                    item.PromptId, item.Prompt, item.NegativePrompt, item.Loras, item.CreatedAt, item.Width, item.Height,
-                    item.Seed, item.Steps, item.Cfg, item.Sampler, item.Scheduler, item.WorkflowId
-                })
-            });
         }
         if (moved.Count == 0) return Results.BadRequest(new { success = false, message = "图片已经在目标文件夹" });
-        var manifestName = $"aiprovider-migration-{DateTime.Now:yyyyMMdd-HHmmssfff}.json";
-        var manifestPath = Path.Combine(destination, manifestName);
-        var manifest = new JsonObject {
-            ["format"] = "aiprovider-gallery-migration", ["version"] = 1,
-            ["migratedAt"] = DateTimeOffset.Now.ToString("O"), ["destinationFolder"] = destination,
-            ["items"] = manifestItems
-        };
-        await File.WriteAllTextAsync(manifestPath, manifest.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
         foreach (var file in moved) await UpdateIndexedPaths(new[] { file.OldPath }, externalDestination ? null : file.NewPath);
         var assets = externalDestination ? moved.Select(file => {
             metadataByPath.TryGetValue(file.OldPath, out var item);
             var image = ToGalleryImage(new GalleryFile { FullPath = file.Target, Path = file.Target, Filename = Path.GetFileName(file.Target), CreatedAt = new DateTimeOffset(File.GetLastWriteTime(file.Target)) });
             return new {
+                oldPath = file.OldPath,
                 localPath = file.Target, localUrl = $"http://127.0.0.1:32145/api/assets/file?path={Uri.EscapeDataString(file.Target)}", fileName = image.Filename, fileSize = image.SizeBytes,
                 width = image.Width ?? item?.Width, height = image.Height ?? item?.Height,
                 prompt = item?.Prompt, negativePrompt = item?.NegativePrompt,
                 lorasJson = item?.Loras == null ? null : JsonSerializer.Serialize(item.Loras, GalleryJsonOptions()), seed = item?.Seed,
                 steps = item?.Steps, cfg = item?.Cfg, sampler = item?.Sampler,
                 scheduler = item?.Scheduler, workflowId = item?.WorkflowId,
-                generatedAt = item?.CreatedAt ?? new DateTimeOffset(File.GetLastWriteTime(file.Target))
+                generatedAt = item?.CreatedAt ?? new DateTimeOffset(File.GetLastWriteTime(file.Target)),
+                generationCompletedAt = item?.GenerationCompletedAt, generationDurationMs = item?.GenerationDurationMs
             };
         }).ToArray() : Array.Empty<object>();
-        return Results.Ok(new { success = true, moved = moved.Count, folder = destination, manifest = manifestName, platform = settings.PlatformName, assets });
+        return Results.Ok(new { success = true, moved = moved.Count, folder = destination, platform = settings.PlatformName, assets });
     } catch {
         foreach (var file in moved.AsEnumerable().Reverse()) if (File.Exists(file.Target) && !File.Exists(file.Source)) File.Move(file.Target, file.Source);
         throw;
@@ -719,13 +725,11 @@ app.MapPost("/api/history/move", async (HistoryMoveRequest request, IHttpClientF
 
     var client = factory.CreateClient("comfy");
     var planned = new List<(string Source, string Target)>();
-    var taskRecords = new JsonArray();
     var reservedTargets = new HashSet<string>(OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
     foreach (var promptId in promptIds) {
         var history = await client.GetFromJsonAsync<JsonObject>($"history/{promptId}");
         var item = history?[promptId];
         if (item == null) return Results.NotFound(new { success = false, message = $"任务 {promptId} 不存在" });
-        var movedFiles = new JsonArray();
         if (item["outputs"] is JsonObject outputs) foreach (var output in outputs) {
             if (output.Value?["images"] is not JsonArray images) continue;
             foreach (var image in images) {
@@ -735,39 +739,26 @@ app.MapPost("/api/history/move", async (HistoryMoveRequest request, IHttpClientF
                 var source = Path.GetFullPath(Path.Combine(root, subfolder, filename));
                 if (!source.StartsWith(rootPrefix, OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal) || !File.Exists(source)) continue;
                 var target = Path.Combine(destination, Path.GetFileName(filename));
-                var index = 1;
-                while (File.Exists(target) || reservedTargets.Contains(target))
-                    target = Path.Combine(destination, $"{Path.GetFileNameWithoutExtension(filename)}_{index++}{Path.GetExtension(filename)}");
-                if (string.Equals(source, target, OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal)) continue;
+                if (string.Equals(source, target, OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal) ||
+                    File.Exists(target) || reservedTargets.Contains(target))
+                    return Results.Conflict(new { success = false, message = $"{Path.GetFileName(source)} 已经迁移了" });
                 reservedTargets.Add(target);
                 planned.Add((source, target));
-                movedFiles.Add(new JsonObject { ["from"] = Path.GetRelativePath(root, source), ["to"] = Path.GetRelativePath(root, target) });
             }
         }
-        taskRecords.Add(new JsonObject { ["promptId"] = promptId, ["history"] = item.DeepClone(), ["movedFiles"] = movedFiles });
     }
     if (planned.Count == 0) return Results.BadRequest(new { success = false, message = "选中任务没有可迁移的图片，或图片已经在目标文件夹" });
 
     var moved = new List<(string Source, string Target)>();
-    var manifestPath = Path.Combine(destination, $"aiprovider-migration-{DateTime.Now:yyyyMMdd-HHmmssfff}.json");
     try {
         foreach (var file in planned) { File.Move(file.Source, file.Target); moved.Add(file); }
-        var manifest = new JsonObject {
-            ["format"] = "aiprovider-comfy-migration",
-            ["version"] = 1,
-            ["migratedAt"] = DateTimeOffset.Now.ToString("O"),
-            ["platform"] = settings.PlatformName,
-            ["tasks"] = taskRecords
-        };
-        await File.WriteAllTextAsync(manifestPath, manifest.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
         using var deleteResponse = await client.PostAsJsonAsync("history", new { delete = promptIds });
         deleteResponse.EnsureSuccessStatusCode();
     } catch {
-        if (File.Exists(manifestPath)) File.Delete(manifestPath);
         foreach (var file in moved.AsEnumerable().Reverse()) if (File.Exists(file.Target) && !File.Exists(file.Source)) File.Move(file.Target, file.Source);
         throw;
     }
-    return Results.Ok(new { success = true, moved = moved.Count, tasks = promptIds.Length, folder, manifest = Path.GetFileName(manifestPath) });
+    return Results.Ok(new { success = true, moved = moved.Count, tasks = promptIds.Length, folder });
 }).DisableAntiforgery();
 app.MapDelete("/api/history/{promptId}", async (string promptId, IHttpClientFactory factory) => {
     if (!Guid.TryParse(promptId, out _)) return Results.BadRequest(new { success = false, message = "Invalid prompt id" });
@@ -1229,6 +1220,21 @@ async Task AddGenerationRecord(GalleryGenerationRecord record) {
     } finally { galleryIndexLock.Release(); }
 }
 
+async Task<bool> CompleteGenerationRecord(string promptId, List<string> files, DateTimeOffset? completedAt, long? durationMs) {
+    await galleryIndexLock.WaitAsync();
+    try {
+        var index = await ReadGalleryIndex();
+        var generation = index.Generations.FirstOrDefault(item => string.Equals(item.PromptId, promptId, StringComparison.OrdinalIgnoreCase));
+        if (generation == null) return false;
+        generation.Files = files;
+        generation.FilesConfirmed = true;
+        generation.GenerationCompletedAt = completedAt;
+        generation.GenerationDurationMs = durationMs.HasValue ? Math.Max(0, durationMs.Value) : null;
+        await WriteGalleryIndex(index);
+        return true;
+    } finally { galleryIndexLock.Release(); }
+}
+
 async Task UpdateIndexedPaths(IEnumerable<string> oldPaths, string? newPath) {
     var old = oldPaths.Select(NormalizeRelativePath).ToHashSet(StringComparer.OrdinalIgnoreCase);
     await galleryIndexLock.WaitAsync();
@@ -1267,19 +1273,18 @@ async Task<List<GalleryItem>> ScanGallery(int maxItems) {
         var changed = false;
         var items = new List<GalleryItem>();
         foreach (var generation in index.Generations.OrderByDescending(item => item.CreatedAt)) {
+            if (!generation.FilesConfirmed) continue;
             var explicitPaths = generation.Files.Select(NormalizeRelativePath).ToHashSet(StringComparer.OrdinalIgnoreCase);
-            var prefix = NormalizeRelativePath(generation.FilenamePrefix);
-            var matches = files.Where(file => !assigned.Contains(file.Path) &&
-                (explicitPaths.Contains(file.Path) || file.Path.StartsWith(prefix + "_", StringComparison.OrdinalIgnoreCase) ||
-                 string.Equals(Path.ChangeExtension(file.Path, null), prefix, StringComparison.OrdinalIgnoreCase))).ToList();
+            var matches = files.Where(file => !assigned.Contains(file.Path) && explicitPaths.Contains(file.Path)).ToList();
             if (matches.Count == 0) continue;
             foreach (var file in matches) assigned.Add(file.Path);
-            var discovered = generation.Files.Concat(matches.Select(file => file.Path)).Select(NormalizeRelativePath).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
-            if (!discovered.SequenceEqual(generation.Files, StringComparer.OrdinalIgnoreCase)) { generation.Files = discovered; changed = true; }
+            var confirmed = generation.Files.Select(NormalizeRelativePath).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+            if (!confirmed.SequenceEqual(generation.Files, StringComparer.OrdinalIgnoreCase)) { generation.Files = confirmed; changed = true; }
             items.Add(new GalleryItem {
                 Id = generation.PromptId, PromptId = generation.PromptId,
                 Prompt = string.IsNullOrWhiteSpace(generation.PositivePrompt) ? "本机生成图片" : generation.PositivePrompt,
                 NegativePrompt = generation.NegativePrompt, CreatedAt = generation.CreatedAt,
+                GenerationCompletedAt = generation.GenerationCompletedAt, GenerationDurationMs = generation.GenerationDurationMs,
                 Loras = generation.Loras,
                 Width = generation.Width, Height = generation.Height, Seed = generation.Seed, Steps = generation.Steps,
                 Cfg = generation.Cfg, Sampler = generation.Sampler, Scheduler = generation.Scheduler, WorkflowId = generation.WorkflowId,
@@ -1329,8 +1334,10 @@ GalleryImage ToGalleryImage(GalleryFile file) {
 void OpenFileInFolder(string file) {
     if (OperatingSystem.IsMacOS())
         Process.Start(new ProcessStartInfo("open", $"-R \"{file}\"") { UseShellExecute = true });
-    else
+    else {
         Process.Start(new ProcessStartInfo("explorer.exe", $"/select,\"{file}\"") { UseShellExecute = true });
+        ExplorerWindowActivator.Activate(Path.GetDirectoryName(file) ?? file);
+    }
 }
 
 (int? Width, int? Height) ReadImageDimensions(string path) {
@@ -1563,6 +1570,12 @@ sealed class FolderRequest { public string? Name { get; set; } }
 sealed class AssetPathRequest { public string? Path { get; set; } }
 sealed class HistoryMoveRequest { public string[] PromptIds { get; set; } = Array.Empty<string>(); public string? Folder { get; set; } }
 class GalleryPathsRequest { public string[] Paths { get; set; } = Array.Empty<string>(); }
+sealed class GalleryCompleteRequest {
+    public string PromptId { get; set; } = "";
+    public string[] Files { get; set; } = Array.Empty<string>();
+    public DateTimeOffset? GenerationCompletedAt { get; set; }
+    public long? GenerationDurationMs { get; set; }
+}
 sealed class ClientLogRequest { public string Scope { get; set; } = "unknown"; public string Message { get; set; } = ""; public string? PromptId { get; set; } public string? Path { get; set; } public string? Details { get; set; } }
 sealed class GalleryMoveRequest : GalleryPathsRequest { public string? Folder { get; set; } }
 sealed class MigrationSettingsRequest { public string? Directory { get; set; } }
@@ -1583,6 +1596,8 @@ sealed class GalleryGenerationRecord {
     public string PromptId { get; set; } = "";
     public string FilenamePrefix { get; set; } = "";
     public DateTimeOffset CreatedAt { get; set; }
+    public DateTimeOffset? GenerationCompletedAt { get; set; }
+    public long? GenerationDurationMs { get; set; }
     public string? PositivePrompt { get; set; }
     public string? NegativePrompt { get; set; }
     public List<GenerationLora> Loras { get; set; } = new();
@@ -1595,6 +1610,7 @@ sealed class GalleryGenerationRecord {
     public string? Sampler { get; set; }
     public string? Scheduler { get; set; }
     public List<string> Files { get; set; } = new();
+    public bool FilesConfirmed { get; set; }
 }
 sealed class GalleryFile {
     public string FullPath { get; set; } = "";
@@ -1618,6 +1634,8 @@ sealed class GalleryItem {
     public string? NegativePrompt { get; set; }
     public List<GenerationLora> Loras { get; set; } = new();
     public DateTimeOffset CreatedAt { get; set; }
+    public DateTimeOffset? GenerationCompletedAt { get; set; }
+    public long? GenerationDurationMs { get; set; }
     public int? Width { get; set; }
     public int? Height { get; set; }
     public long? Seed { get; set; }
@@ -1632,4 +1650,68 @@ sealed class GenerationLora {
     public string Name { get; set; } = "";
     public double ModelStrength { get; set; } = 1;
     public double ClipStrength { get; set; } = 1;
+}
+
+static class ExplorerWindowActivator {
+    const int SwRestore = 9;
+
+    public static void Activate(string directory) {
+        if (!OperatingSystem.IsWindows()) return;
+        var target = Path.GetFullPath(directory).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        var thread = new Thread(() => ActivateOnStaThread(target)) { IsBackground = true };
+        thread.SetApartmentState(ApartmentState.STA);
+        thread.Start();
+        thread.Join(TimeSpan.FromSeconds(2));
+    }
+
+    static void ActivateOnStaThread(string target) {
+        object? shell = null;
+        try {
+            var shellType = Type.GetTypeFromProgID("Shell.Application");
+            if (shellType == null) return;
+            shell = Activator.CreateInstance(shellType);
+            if (shell == null) return;
+            for (var attempt = 0; attempt < 12; attempt++) {
+                dynamic windows = shellType.InvokeMember("Windows", System.Reflection.BindingFlags.InvokeMethod, null, shell, null)!;
+                var count = (int)windows.Count;
+                for (var index = 0; index < count; index++) {
+                    dynamic window = windows.Item(index);
+                    string? locationUrl = Convert.ToString((object?)window.LocationURL);
+                    if (!TryGetLocalDirectory(locationUrl, out string current) ||
+                        !string.Equals(current, target, StringComparison.OrdinalIgnoreCase)) continue;
+                    var handle = new IntPtr(Convert.ToInt64(window.HWND));
+                    ShowWindowAsync(handle, SwRestore);
+                    BringWindowToTop(handle);
+                    SetForegroundWindow(handle);
+                    return;
+                }
+                Thread.Sleep(100);
+            }
+        } catch {
+            // Explorer has already received the /select request. Foreground
+            // activation is a best-effort enhancement for Windows shell reuse.
+        } finally {
+            if (shell != null && System.Runtime.InteropServices.Marshal.IsComObject(shell))
+                System.Runtime.InteropServices.Marshal.FinalReleaseComObject(shell);
+        }
+    }
+
+    static bool TryGetLocalDirectory(string? locationUrl, out string directory) {
+        directory = "";
+        if (string.IsNullOrWhiteSpace(locationUrl) ||
+            !Uri.TryCreate(locationUrl, UriKind.Absolute, out var uri) || !uri.IsFile) return false;
+        try {
+            directory = Path.GetFullPath(uri.LocalPath).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            return true;
+        } catch { return false; }
+    }
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    static extern bool ShowWindowAsync(IntPtr window, int command);
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    static extern bool BringWindowToTop(IntPtr window);
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    static extern bool SetForegroundWindow(IntPtr window);
 }

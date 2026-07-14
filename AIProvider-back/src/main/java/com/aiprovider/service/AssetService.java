@@ -18,12 +18,13 @@ public class AssetService {
     public AssetService(AssetRepository repository) { this.repository = repository; }
 
     @Transactional
-    public int saveBatch(AssetBatchDTO dto) {
+    public AssetBatchResultVO saveBatch(AssetBatchDTO dto) {
         String platform = platform(dto == null ? null : dto.getPlatform());
         List<AssetItemDTO> items = dto == null || dto.getItems() == null ? Collections.emptyList() : dto.getItems();
         if (items.isEmpty() || items.size() > 500) throw new IllegalArgumentException("资产数量必须在 1 到 500 之间");
         int saved = 0;
         Set<String> paths = new HashSet<>();
+        List<String> pathHashes = new ArrayList<>();
         for (AssetItemDTO item : items) {
             validate(item);
             String normalizedPath = item.getLocalPath().trim();
@@ -35,10 +36,15 @@ public class AssetService {
             item.setFileName(clean(item.getFileName(), 255));
             if (item.getFileName() == null) item.setFileName(fileName(normalizedPath));
             item.setFileSize(item.getFileSize() == null ? 0 : Math.max(0, item.getFileSize()));
+            if (item.getGenerationDurationMs() != null) item.setGenerationDurationMs(Math.max(0, item.getGenerationDurationMs()));
             item.setLorasJson(clean(item.getLorasJson(), 16000));
-            saved += repository.upsert(platform, sha256(pathKey), item) > 0 ? 1 : 0;
+            String pathHash = sha256(pathKey);
+            saved += repository.upsert(platform, pathHash, item) > 0 ? 1 : 0;
+            pathHashes.add(pathHash);
         }
-        return saved;
+        List<AssetVO> persisted = new ArrayList<>();
+        for (Map<String,Object> row : repository.findByPathHashes(platform, pathHashes)) persisted.add(toVO(row));
+        return new AssetBatchResultVO(saved, persisted);
     }
 
     public AssetPageVO page(String platform, int page, int pageSize) {
@@ -89,7 +95,8 @@ public class AssetService {
     private static AssetVO toVO(Map<String,Object> row) {
         return new AssetVO(number(row.get("id")), text(row.get("platform")), text(row.get("localPath")), text(row.get("localUrl")), text(row.get("fileName")), number(row.get("fileSize")),
                 integer(row.get("width")), integer(row.get("height")), text(row.get("prompt")), text(row.get("negativePrompt")), text(row.get("lorasJson")), nullableLong(row.get("seed")), integer(row.get("steps")),
-                decimal(row.get("cfg")), text(row.get("sampler")), text(row.get("scheduler")), text(row.get("workflowId")), date(row.get("generatedAt")), date(row.get("createdAt")));
+                decimal(row.get("cfg")), text(row.get("sampler")), text(row.get("scheduler")), text(row.get("workflowId")), date(row.get("generatedAt")),
+                date(row.get("generationCompletedAt")), nullableLong(row.get("generationDurationMs")), date(row.get("createdAt")));
     }
     private static String text(Object value) { return value == null ? null : String.valueOf(value); }
     private static long number(Object value) { return value instanceof Number ? ((Number)value).longValue() : 0; }
