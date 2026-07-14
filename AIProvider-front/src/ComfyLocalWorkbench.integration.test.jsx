@@ -56,6 +56,7 @@ describe("Comfy image generation flow", () => {
   let submitted;
   let moved;
   let galleryRequests;
+  let localGalleryPages;
   let assetRequests;
   let externalRun;
   let externalQueuePoll;
@@ -74,6 +75,7 @@ describe("Comfy image generation flow", () => {
     submitted = false;
     moved = false;
     galleryRequests = 0;
+    localGalleryPages = 1;
     assetRequests = 0;
     externalRun = false;
     externalQueuePoll = 0;
@@ -136,7 +138,7 @@ describe("Comfy image generation flow", () => {
       if (url.endsWith("/api/assets/batch") && options.method === "POST") return json({ code: 200, data: { saved: 1 } });
       if (url.includes("/api/gallery?")) {
         galleryRequests += 1;
-        return json({ items: multiImageGallery ? [{
+        const items = multiImageGallery ? [{
           id: PROMPT_ID,
           promptId: PROMPT_ID,
           prompt: "two images",
@@ -151,7 +153,10 @@ describe("Comfy image generation flow", () => {
         prompt: "portrait",
         createdAt: new Date().toISOString(),
         images: [{ filename: "done.png", path: "aimaid/done.png" }],
-        }] : [] });
+        }] : [];
+        const page = Number(url.match(/[?&]page=(\d+)/)?.[1] || 1);
+        const currentImages = items.reduce((sum, item) => sum + item.images.length, 0);
+        return json({ items, page, pages: localGalleryPages, total: currentImages + (localGalleryPages - 1) * 100 });
       }
       if (url.includes("/api/gallery/file?")) return new Response(new Blob(["image"], { type: "image/png" }));
       if (url.includes("/api/assets/file?")) return new Response(new Blob(["image"], { type: "image/png" }));
@@ -287,6 +292,18 @@ describe("Comfy image generation flow", () => {
     await waitFor(() => expect(assetRequests).toBe(2));
 
     expect(URL.createObjectURL).toHaveBeenCalledTimes(2);
+  });
+
+  it("paginates local images in pages of 100", async () => {
+    submitted = true;
+    localGalleryPages = 2;
+    render(<ComfyLocalWorkbench />);
+
+    expect(await screen.findByText("第 1 / 2 页 · 每页 100 张")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "下一页" }));
+
+    await waitFor(() => expect(galleryRequests).toBe(2));
+    expect(screen.getByText("第 2 / 2 页 · 每页 100 张")).toBeTruthy();
   });
 
   it("submits the workflow explicitly selected by the user", async () => {

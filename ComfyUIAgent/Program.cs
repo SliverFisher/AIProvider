@@ -511,9 +511,19 @@ app.MapPost("/api/generate", async (HttpRequest request, IHttpClientFactory fact
         width = Has("width") ? int.Parse(Required("width")) : 0, height = Has("height") ? int.Parse(Required("height")) : 0 });
 }).DisableAntiforgery();
 
-app.MapGet("/api/gallery", async (int? maxItems) => {
-    var items = await ScanGallery(Math.Clamp(maxItems ?? 300, 1, 1000));
-    return Results.Ok(new { success = true, items });
+app.MapGet("/api/gallery", async (int? maxItems, int? page, int? pageSize) => {
+    if (page.HasValue || pageSize.HasValue) {
+        var requestedPage = Math.Max(1, page ?? 1);
+        var requestedPageSize = Math.Clamp(pageSize ?? maxItems ?? 100, 1, 100);
+        var allItems = await ScanGallery(5000);
+        var total = allItems.Sum(item => item.Images.Count);
+        var pages = total == 0 ? 0 : (int)Math.Ceiling(total / (double)requestedPageSize);
+        var currentPage = pages == 0 ? 1 : Math.Min(requestedPage, pages);
+        var items = TakeGalleryImagePage(allItems, (currentPage - 1) * requestedPageSize, requestedPageSize);
+        return Results.Ok(new { success = true, page = currentPage, pages, total, items });
+    }
+    var legacyItems = await ScanGallery(Math.Clamp(maxItems ?? 300, 1, 1000));
+    return Results.Ok(new { success = true, items = legacyItems });
 });
 
 app.MapGet("/api/gallery/file", (string path) => {
@@ -1268,6 +1278,26 @@ async Task<List<GalleryItem>> ScanGallery(int maxItems) {
         if (changed || !File.Exists(GalleryIndexPath())) await WriteGalleryIndex(index);
         return items.OrderByDescending(item => item.CreatedAt).Take(maxItems).ToList();
     } finally { galleryIndexLock.Release(); }
+}
+
+List<GalleryItem> TakeGalleryImagePage(List<GalleryItem> items, int skip, int take) {
+    var pageItems = new List<GalleryItem>();
+    var remainingSkip = skip;
+    var remainingTake = take;
+    foreach (var item in items) {
+        if (remainingTake <= 0) break;
+        if (remainingSkip >= item.Images.Count) {
+            remainingSkip -= item.Images.Count;
+            continue;
+        }
+        var images = item.Images.Skip(remainingSkip).Take(remainingTake).ToList();
+        remainingSkip = 0;
+        if (images.Count == 0) continue;
+        item.Images = images;
+        pageItems.Add(item);
+        remainingTake -= images.Count;
+    }
+    return pageItems;
 }
 
 GalleryImage ToGalleryImage(GalleryFile file) {

@@ -139,6 +139,7 @@ export default function ComfyLocalWorkbench({ mode = "workbench", active = true 
   const [galleryMode, setGalleryMode] = useState("output");
   const [galleryWorkflowFilter, setGalleryWorkflowFilter] = useState("all");
   const [galleryTransparencyFilter, setGalleryTransparencyFilter] = useState("all");
+  const [localPage, setLocalPage] = useState({ page: 1, pages: 0, total: 0 });
   const [assetPage, setAssetPage] = useState({ page: 1, pages: 0, total: 0 });
   const [detail, setDetail] = useState(null);
   const [infoDetail, setInfoDetail] = useState(null);
@@ -659,11 +660,15 @@ export default function ComfyLocalWorkbench({ mode = "workbench", active = true 
     const assets = mode === "assets";
     const response = assets
       ? await fetch(`/api/assets?platform=${encodeURIComponent(platform)}&page=${page}&pageSize=100`, { signal: deadline(30000) })
-      : await call("/api/gallery?maxItems=100", {}, 30000, authToken);
+      : await call(`/api/gallery?page=${page}&pageSize=100`, {}, 30000, authToken);
     const data = await readJson(response, assets ? "后端资产目录" : "本机图片目录");
     if (!response.ok || (assets && data.code !== 200)) throw new Error(data.message || `HTTP ${response.status}`);
     const payload = assets ? data.data || {} : data;
-    if (assets && galleryModeRef.current === mode) setAssetPage({ page: payload.page || page, pages: payload.pages || 0, total: payload.total || 0 });
+    const pageState = { page: payload.page || page, pages: payload.pages || 0, total: payload.total || 0 };
+    if (galleryModeRef.current === mode) {
+      if (assets) setAssetPage(pageState);
+      else setLocalPage(pageState);
+    }
     const sourceItems = assets ? (payload.items || []).map((item) => ({
       id: `asset-${item.id}`, assetId: item.id, source: "asset", platform: item.platform,
       prompt: item.prompt, negativePrompt: item.negativePrompt, loras: parseLoras(item.lorasJson), seed: item.seed, steps: item.steps,
@@ -676,20 +681,25 @@ export default function ComfyLocalWorkbench({ mode = "workbench", active = true 
     const entries = await hydrateGalleryEntries(limitedSourceItems, assets, authToken, previousCache?.entries || []);
     const visibleEntries = entries.filter((item) => item.images.length > 0);
     if (previousCache) releaseReplacedGalleryImages(previousCache.entries, visibleEntries);
-    const pageState = assets ? { page: payload.page || page, pages: payload.pages || 0, total: payload.total || 0 } : null;
     galleryCache.current[mode] = { entries: visibleEntries, pageState, loadedAt: Date.now() };
     if (galleryModeRef.current === mode) setHistory(visibleEntries);
   };
   const updateGalleryHistory = (updater) => setHistory((current) => {
     const next = typeof updater === "function" ? updater(current) : updater;
     const cached = galleryCache.current[galleryMode];
-    galleryCache.current[galleryMode] = { entries: next, pageState: galleryMode === "assets" ? assetPage : cached?.pageState || null, loadedAt: Date.now() };
+    galleryCache.current[galleryMode] = { entries: next, pageState: galleryMode === "assets" ? assetPage : localPage, loadedAt: Date.now() };
     return next;
   });
   const updateAssetPage = (updater) => setAssetPage((current) => {
     const next = typeof updater === "function" ? updater(current) : updater;
     const cached = galleryCache.current.assets;
     if (cached) galleryCache.current.assets = { ...cached, pageState: next, loadedAt: Date.now() };
+    return next;
+  });
+  const updateLocalPage = (updater) => setLocalPage((current) => {
+    const next = typeof updater === "function" ? updater(current) : updater;
+    const cached = galleryCache.current.output;
+    if (cached) galleryCache.current.output = { ...cached, pageState: next, loadedAt: Date.now() };
     return next;
   });
   const switchGallery = async (mode) => {
@@ -703,7 +713,10 @@ export default function ComfyLocalWorkbench({ mode = "workbench", active = true 
     const cached = galleryCache.current[mode];
     if (cached) {
       setHistory(cached.entries);
-      if (cached.pageState) setAssetPage(cached.pageState);
+      if (cached.pageState) {
+        if (mode === "assets") setAssetPage(cached.pageState);
+        else setLocalPage(cached.pageState);
+      }
       loadHistory(token, mode, cached.pageState?.page || 1).catch((e) => setError(e.message));
       return;
     }
@@ -1047,6 +1060,11 @@ export default function ComfyLocalWorkbench({ mode = "workbench", active = true 
         const total = Math.max(0, current.total - 1);
         return { ...current, total, pages: total ? Math.ceil(total / 100) : 0 };
       });
+    } else {
+      updateLocalPage((current) => {
+        const total = Math.max(0, current.total - 1);
+        return { ...current, total, pages: total ? Math.ceil(total / 100) : 0 };
+      });
     }
     updateGalleryHistory((current) => current
       .map((entry) => ({
@@ -1225,6 +1243,11 @@ export default function ComfyLocalWorkbench({ mode = "workbench", active = true 
           const total = Math.max(0, current.total - selectedEntries.length);
           return { ...current, total, pages: total ? Math.ceil(total / 100) : 0 };
         });
+      } else {
+        updateLocalPage((current) => {
+          const total = Math.max(0, current.total - selectedEntries.length);
+          return { ...current, total, pages: total ? Math.ceil(total / 100) : 0 };
+        });
       }
       setSelectedImages(new Set());
       setSelectionMode(false);
@@ -1291,6 +1314,10 @@ export default function ComfyLocalWorkbench({ mode = "workbench", active = true 
         updateGalleryHistory((current) => current
           .map((item) => ({ ...item, images: (item.images || []).filter((image) => !movedPaths.has(String(image.path).toLowerCase())) }))
           .filter((item) => item.images.length > 0));
+        updateLocalPage((current) => {
+          const total = Math.max(0, current.total - movedPaths.size);
+          return { ...current, total, pages: total ? Math.ceil(total / 100) : 0 };
+        });
       }
       await loadFolders(token);
     } catch (e) {
@@ -1555,6 +1582,7 @@ export default function ComfyLocalWorkbench({ mode = "workbench", active = true 
   const activeTaskWorkflowName = activeTask
     ? activeTask.workflowName || workflows.find((workflow) => workflow.id === (activeTask.workflowId || activeTask.form?.workflowId))?.name || (activeTask.external ? "外部 ComfyUI 工作流" : "当前工作流")
     : "";
+  const activeGalleryPage = galleryMode === "assets" ? assetPage : localPage;
 
   if (mode === "settings") {
     return (
@@ -1717,10 +1745,7 @@ export default function ComfyLocalWorkbench({ mode = "workbench", active = true 
             </div>
             <div className="gallery-actions">
               <span>
-                {galleryMode === "assets" ? assetPage.total : history.reduce(
-                  (sum, item) => sum + (item.images?.length || 0),
-                  0,
-                )}{" "}
+                {activeGalleryPage.total}{" "}
                 张
               </span>
               {selectionMode ? (
@@ -1842,10 +1867,10 @@ export default function ComfyLocalWorkbench({ mode = "workbench", active = true 
                 })}
             </div>
           )}
-          {galleryMode === "assets" && assetPage.pages > 1 && <div className="asset-pagination">
-            <button disabled={assetPage.page <= 1 || busy} onClick={() => loadHistory(token, "assets", assetPage.page - 1).catch((e) => setError(e.message))}>上一页</button>
-            <span>第 {assetPage.page} / {assetPage.pages} 页 · 每页 100 张</span>
-            <button disabled={assetPage.page >= assetPage.pages || busy} onClick={() => loadHistory(token, "assets", assetPage.page + 1).catch((e) => setError(e.message))}>下一页</button>
+          {activeGalleryPage.pages > 1 && <div className="asset-pagination">
+            <button disabled={activeGalleryPage.page <= 1 || busy} onClick={() => loadHistory(token, galleryMode, activeGalleryPage.page - 1).catch((e) => setError(e.message))}>上一页</button>
+            <span>第 {activeGalleryPage.page} / {activeGalleryPage.pages} 页 · 每页 100 张</span>
+            <button disabled={activeGalleryPage.page >= activeGalleryPage.pages || busy} onClick={() => loadHistory(token, galleryMode, activeGalleryPage.page + 1).catch((e) => setError(e.message))}>下一页</button>
           </div>}
         </section>
       </div>
