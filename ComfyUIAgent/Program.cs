@@ -806,13 +806,18 @@ app.MapMethods("/comfy/{**path}", new[] { "GET", "POST" }, async (string? path, 
         request.Content.Headers.TryAddWithoutValidation("Content-Type", contentType.ToArray());
     using var response = await factory.CreateClient("comfy").SendAsync(request, HttpCompletionOption.ResponseHeadersRead, context.RequestAborted);
     context.Response.StatusCode = (int)response.StatusCode;
-    foreach (var header in response.Headers) context.Response.Headers[header.Key] = header.Value.ToArray();
-    foreach (var header in response.Content.Headers) context.Response.Headers[header.Key] = header.Value.ToArray();
+    foreach (var header in response.Headers) CopySafeResponseHeader(context.Response, header.Key, header.Value);
+    foreach (var header in response.Content.Headers) CopySafeResponseHeader(context.Response, header.Key, header.Value);
     context.Response.Headers.Remove("transfer-encoding");
     await response.Content.CopyToAsync(context.Response.Body, context.RequestAborted);
 });
 
 app.Run();
+
+void CopySafeResponseHeader(HttpResponse target, string name, IEnumerable<string> values) {
+    var safeValues = values.Where(value => value.All(character => character == '\t' || character is >= ' ' and <= '~')).ToArray();
+    if (safeValues.Length > 0) target.Headers[name] = safeValues;
+}
 
 string AgentLogDirectory() => Path.Combine(AppContext.BaseDirectory, "logs");
 string AgentLogPath() => Path.Combine(AgentLogDirectory(), $"aiprovider-{DateTime.Now:yyyyMMdd}.jsonl");

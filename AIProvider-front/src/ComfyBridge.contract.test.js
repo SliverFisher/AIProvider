@@ -80,4 +80,24 @@ bridgeDescribe("ComfyUIAgent bridge contract", () => {
     expect(response.headers.get("content-type")).toMatch(/^image\//);
     expect(bytes.byteLength).toBeGreaterThan(0);
   });
+
+  it("proxies a generated image whose filename contains non-ASCII characters", async () => {
+    const history = await bridgeJson("/comfy/history?max_items=20");
+    const images = Object.values(history).flatMap((item) =>
+      Object.values(item.outputs || {}).flatMap((output) => output.images || []));
+    const image = images.find((candidate) => /[^\x00-\x7F]/.test(candidate.filename || ""));
+    expect(image, "recent ComfyUI history should contain a non-ASCII filename fixture").toBeTruthy();
+
+    const query = new URLSearchParams({
+      filename: image.filename,
+      subfolder: image.subfolder || "",
+      type: image.type || "output",
+    });
+    const response = await bridgeFetch(`/comfy/view?${query}`);
+    const bytes = await response.arrayBuffer();
+
+    expect(response.ok, `/comfy/view returned HTTP ${response.status}`).toBe(true);
+    expect(response.headers.get("content-type")).toMatch(/^image\//);
+    expect(bytes.byteLength).toBeGreaterThan(0);
+  });
 }, 30_000);
