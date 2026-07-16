@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import CuteWorkshopCard from "./CuteWorkshopCard";
+import { CuteWorkshopArt } from "./CuteWorkshopCard";
 import unit09Space from "./assets/cockpit-unit09-space-v5.png";
 import unit09Frame from "./assets/cockpit-unit09-frame-v2.png";
 import unit09Pilot from "./assets/cockpit-unit09-pilot-v2.png";
@@ -385,7 +385,7 @@ export default function CuteHomeBackground({ onOpenWorkshop }) {
         </div>
 
         {scene.instruments.map((instrument) => <div
-          className={`cockpit-instrument cockpit-instrument-${instrument.id}`}
+          className={`cockpit-instrument cockpit-instrument-${instrument.id} cockpit-instrument-${instrument.mode}`}
           key={instrument.id}
           style={instrument.style}
         >
@@ -393,10 +393,13 @@ export default function CuteHomeBackground({ onOpenWorkshop }) {
           {instrument.mode === "radar" && <i className="instrument-radar" />}
           {instrument.mode === "bars" && <span className="instrument-bars"><b /><b /><b /><b /></span>}
           {instrument.mode === "wave" && <span className="instrument-wave" />}
+          {instrument.mode === "workshop" && <button
+            type="button"
+            className="cockpit-workshop-tile"
+            onClick={onOpenWorkshop}
+            aria-label="进入图像工坊"
+          ><CuteWorkshopArt /></button>}
         </div>)}
-        <div className="cockpit-workshop-overlay">
-          <CuteWorkshopCard onOpen={onOpenWorkshop} />
-        </div>
         <div className="cockpit-console-keys" style={scene.consoleKeys}>
           {CONSOLE_KEYS.map((_, index) => <i key={index} />)}
         </div>
