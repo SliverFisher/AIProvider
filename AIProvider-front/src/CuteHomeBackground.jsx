@@ -98,13 +98,13 @@ export default function CuteHomeBackground({ onOpenWorkshop }) {
       duration: 0,
     }));
     const flybyTemplates = [
-      { type: "jupiter", k: .072, maxScale: 6, radius: .042 },
-      { type: "saturn", k: .068, maxScale: 5.8, radius: .032 },
-      { type: "earth", k: .078, maxScale: 6.2, radius: .035 },
-      { type: "venus", k: .076, maxScale: 6.1, radius: .034 },
-      { type: "mars", k: .082, maxScale: 6.2, radius: .031 },
-      { type: "neptune", k: .074, maxScale: 6, radius: .035 },
-      { type: "pluto", k: .084, maxScale: 6.5, radius: .023 },
+      { type: "jupiter", k: .11, radius: .014 },
+      { type: "saturn", k: .105, radius: .01 },
+      { type: "earth", k: .118, radius: .012 },
+      { type: "venus", k: .116, radius: .0115 },
+      { type: "mars", k: .122, radius: .0105 },
+      { type: "neptune", k: .113, radius: .012 },
+      { type: "pluto", k: .125, radius: .007 },
     ];
     const celestialImages = Object.fromEntries(Object.entries({
       jupiter: jupiterReal,
@@ -141,12 +141,12 @@ export default function CuteHomeBackground({ onOpenWorkshop }) {
     const launchFlyby = (time) => {
       if (!flybyQueue.length) refillFlybyQueue();
       const template = flybyQueue.shift();
-      const lanes = [-70, -36, 0, 42, 76];
+      const lanes = [-32, -18, 0, 20, 34];
       const lane = previousFlybyType ? lanes[Math.floor(Math.random() * lanes.length)] : 0;
       activeFlyby = {
         ...template,
         startedAt: time,
-        x0: 1540 + Math.random() * 105,
+        x0: 1700 + Math.random() * 30,
         y0: 285 + lane,
         k: template.k * (.92 + Math.random() * .16),
       };
@@ -194,18 +194,21 @@ export default function CuteHomeBackground({ onOpenWorkshop }) {
     const drawFlybyPlanet = (planet, time) => {
       const local = (time - planet.startedAt) / 1000;
       const perspectiveScale = Math.exp(planet.k * local);
-      if (perspectiveScale >= planet.maxScale) {
+      const x = (1800 + (planet.x0 - 1800) * perspectiveScale) / COCKPIT_DESIGN_SIZE.width;
+      const y = (285 + (planet.y0 - 285) * perspectiveScale) / COCKPIT_DESIGN_SIZE.height;
+      const radius = Math.min(width, height) * planet.radius * perspectiveScale;
+      const centerX = x * width;
+      const centerY = y * height;
+      const halfWidth = planet.type === "saturn" ? radius * 2.275 : radius;
+      const halfHeight = planet.type === "saturn" ? radius * 1.18 : radius;
+      if (centerX + halfWidth < 0 || centerX - halfWidth > width || centerY + halfHeight < 0 || centerY - halfHeight > height) {
         activeFlyby = null;
         nextFlybyAt = time + 2500 + Math.random() * 4500;
         return;
       }
-      const edgeFade = Math.min(1, local / .9, (planet.maxScale - perspectiveScale) / .7);
-      const x = (1800 + (planet.x0 - 1800) * perspectiveScale) / COCKPIT_DESIGN_SIZE.width;
-      const y = (285 + (planet.y0 - 285) * perspectiveScale) / COCKPIT_DESIGN_SIZE.height;
-      const radius = Math.max(20, Math.min(width, height) * planet.radius * perspectiveScale);
       context.save();
-      context.translate(x * width, y * height);
-      context.globalAlpha = .96 * edgeFade;
+      context.translate(centerX, centerY);
+      context.globalAlpha = .96;
       const image = celestialImages[planet.type];
       if (!image.complete || !image.naturalWidth) {
         context.restore();
