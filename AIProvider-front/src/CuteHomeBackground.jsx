@@ -1,56 +1,402 @@
-import { useEffect, useRef } from "react";
-import { Cat, FlowerLotus, Heart, PawPrint, Sparkle, Star } from "@phosphor-icons/react";
+import { useEffect, useRef, useState } from "react";
+import { ImageSquare } from "@phosphor-icons/react";
+import unit09Space from "./assets/cockpit-unit09-space-v5.png";
+import unit09Frame from "./assets/cockpit-unit09-frame-v2.png";
+import unit09Pilot from "./assets/cockpit-unit09-pilot-v2.png";
+import jupiterReal from "./assets/celestial/jupiter-real-v2.webp";
+import earthReal from "./assets/celestial/earth-real.webp";
+import marsReal from "./assets/celestial/mars-real.webp";
+import venusReal from "./assets/celestial/venus-real.webp";
+import saturnReal from "./assets/celestial/saturn-real.webp";
+import titanReal from "./assets/celestial/titan-real.webp";
+import neptuneReal from "./assets/celestial/neptune-real.webp";
+import plutoReal from "./assets/celestial/pluto-real.webp";
+import moonReal from "./assets/celestial/moon-real.webp";
+import { RELEASE_VERSION } from "./releaseVersion";
 import "./CuteHomeBackground.css";
 
-const FLOATERS = [
-  { Icon: Heart, x: "8%", y: "15%", size: 31, delay: "-1s", duration: "7s", depth: 1.2, tone: "pink" },
-  { Icon: Sparkle, x: "20%", y: "72%", size: 24, delay: "-4s", duration: "6s", depth: .8, tone: "violet" },
-  { Icon: Star, x: "78%", y: "12%", size: 27, delay: "-2s", duration: "8s", depth: 1.1, tone: "yellow" },
-  { Icon: FlowerLotus, x: "89%", y: "67%", size: 34, delay: "-5s", duration: "9s", depth: .7, tone: "mint" },
-  { Icon: PawPrint, x: "66%", y: "82%", size: 25, delay: "-3s", duration: "7.5s", depth: 1.35, tone: "pink" },
-  { Icon: Sparkle, x: "36%", y: "10%", size: 18, delay: "-6s", duration: "5.5s", depth: .6, tone: "violet" },
-  { Icon: Heart, x: "94%", y: "29%", size: 18, delay: "-2.5s", duration: "6.5s", depth: 1.5, tone: "pink" },
-  { Icon: Star, x: "4%", y: "52%", size: 17, delay: "-4.5s", duration: "8.5s", depth: .9, tone: "yellow" },
-];
-const MAGIC_DUST = Array.from({ length: 22 }, (_, index) => ({
-  x: `${(index * 37 + 9) % 97}%`,
-  y: `${(index * 53 + 7) % 91}%`,
-  delay: `${-(index % 9) * .73}s`,
-  duration: `${4.8 + (index % 6) * .7}s`,
-  size: `${2 + (index % 3)}px`,
-}));
+const STATUS_LIGHTS = Array.from({ length: 7 });
+const CONSOLE_KEYS = Array.from({ length: 5 });
+const COCKPIT_DESIGN_SIZE = { width: 2048, height: 1368 };
+const FLIGHT_FOCUS = {
+  x: 1800 / COCKPIT_DESIGN_SIZE.width,
+  y: 285 / COCKPIT_DESIGN_SIZE.height,
+};
 
-export default function CuteHomeBackground() {
+const COCKPIT_SCENES = [
+  {
+    id: "unit09",
+    label: "UNIT 09",
+    space: unit09Space,
+    frame: unit09Frame,
+    pilot: unit09Pilot,
+    instruments: [
+      { id: "left", mode: "radar", style: { left: "20.2%", top: "30.7%", width: "5.45%", height: "9.45%", transform: "perspective(240px) rotateY(5deg) rotateZ(.4deg)" } },
+      { id: "center", mode: "bars", style: { left: "44.95%", top: "33.45%", width: "3.35%", height: "4.55%", transform: "perspective(180px) rotateY(-3deg) rotateZ(.4deg)" } },
+      { id: "right", mode: "workshop", style: { left: "62.75%", top: "31.65%", width: "8.15%", height: "13.35%", transform: "perspective(250px) rotateY(-4deg) rotateZ(.35deg)" } },
+    ],
+    consoleKeys: { left: "63.05%", top: "44.25%", width: "7.45%", height: "1.2%", transform: "perspective(180px) rotateY(-4deg) rotateZ(.35deg)" },
+    statusLights: { left: "20.35%", top: "41.15%", width: "5.2%", height: ".82%", transform: "rotate(.4deg)" },
+    switchPanel: { left: "62.3%", top: "66.7%" },
+  },
+];
+
+export default function CuteHomeBackground({ onOpenWorkshop }) {
   const root = useRef(null);
+  const spaceCanvas = useRef(null);
+  const releaseTimer = useRef(0);
+  const [pressState, setPressState] = useState("");
+  const [sceneIndex, setSceneIndex] = useState(0);
+  const scene = COCKPIT_SCENES[sceneIndex];
+
   useEffect(() => {
     let frame = 0;
     const move = (event) => {
       if (frame) cancelAnimationFrame(frame);
       frame = requestAnimationFrame(() => {
-        const x = (event.clientX / window.innerWidth - .5).toFixed(3);
-        const y = (event.clientY / window.innerHeight - .5).toFixed(3);
-        root.current?.style.setProperty("--cute-x", x);
-        root.current?.style.setProperty("--cute-y", y);
+        const bounds = root.current?.getBoundingClientRect();
+        if (!bounds) return;
+        const x = Math.max(-.5, Math.min(.5, (event.clientX - bounds.left) / bounds.width - .5));
+        const y = Math.max(-.5, Math.min(.5, (event.clientY - bounds.top) / bounds.height - .5));
+        root.current.style.setProperty("--cockpit-x", x.toFixed(3));
+        root.current.style.setProperty("--cockpit-y", y.toFixed(3));
       });
     };
     window.addEventListener("pointermove", move, { passive: true });
-    return () => { window.removeEventListener("pointermove", move); if (frame) cancelAnimationFrame(frame); };
+    return () => {
+      window.removeEventListener("pointermove", move);
+      if (frame) cancelAnimationFrame(frame);
+    };
   }, []);
 
-  return <div className="cute-home-bg" ref={root} aria-hidden="true">
-    <div className="cute-dot-field" />
-    <div className="cute-pointer-glow" />
-    <i className="cute-blob blob-a" /><i className="cute-blob blob-b" /><i className="cute-blob blob-c" />
-    <div className="cute-meteors"><i /><i /><i /></div>
-    <div className="cute-magic-dust">{MAGIC_DUST.map((dust, index) => <i key={index} style={{ "--x": dust.x, "--y": dust.y, "--delay": dust.delay, "--duration": dust.duration, "--size": dust.size }} />)}</div>
-    <div className="cute-orbit cute-orbit-a"><Sparkle weight="fill" /></div>
-    <div className="cute-orbit cute-orbit-b"><Heart weight="fill" /></div>
-    {FLOATERS.map(({ Icon, x, y, size, delay, duration, depth, tone }, index) => <span
-      className={`cute-floater ${tone}`} key={`${x}-${y}`} style={{ "--x": x, "--y": y, "--delay": delay, "--duration": duration, "--depth": depth }}
-    ><i><Icon size={size} weight={index % 3 === 0 ? "fill" : "duotone"} /></i></span>)}
-    <div className="cute-charm charm-cat"><Cat weight="duotone" /><span>meow</span></div>
-    <div className="cute-charm charm-paw"><PawPrint weight="fill" /><i /><i /><i /></div>
-    <div className="cute-spark-cluster"><b>✦</b><i>·</i><em>♡</em><span>✧</span></div>
-    <div className="cute-heart-bubbles"><i>♡</i><i>✦</i><i>♡</i><i>✧</i><i>♡</i></div>
-  </div>;
+  useEffect(() => {
+    const canvas = spaceCanvas.current;
+    const context = canvas?.getContext("2d");
+    if (!canvas || !context) return undefined;
+
+    let animationFrame = 0;
+    let width = 0;
+    let height = 0;
+    let ratio = 1;
+    let lastTime = performance.now();
+    const colors = ["151,220,255", "124,173,255", "255,202,132", "201,242,255"];
+    const stars = Array.from({ length: 320 }, (_, index) => ({
+      x: Math.random(),
+      y: Math.random(),
+      size: .45 + Math.random() * 1.9,
+      speed: Math.random() * .0005,
+      phase: Math.random() * Math.PI * 2,
+      color: colors[index % colors.length],
+    }));
+    const meteors = Array.from({ length: 2 }, (_, index) => ({
+      active: false,
+      wait: 2.5 + index * 5 + Math.random() * 2.5,
+      x: 0,
+      y: 0,
+      speed: 0,
+      life: 0,
+      duration: 0,
+    }));
+    const flybyPlanets = [
+      { type: "jupiter", delay: 2, duration: 110, cycle: 980, x0: 1500, y0: 210, k: .0024, radius: .195 },
+      { type: "saturn", delay: 130, duration: 120, cycle: 980, x0: 1540, y0: 370, k: .0026, radius: .19 },
+      { type: "earth", delay: 270, duration: 100, cycle: 980, x0: 1450, y0: 285, k: .002, radius: .15 },
+      { type: "venus", delay: 390, duration: 100, cycle: 980, x0: 1520, y0: 450, k: .0023, radius: .145 },
+      { type: "mars", delay: 510, duration: 95, cycle: 980, x0: 1400, y0: 165, k: .0025, radius: .14 },
+      { type: "neptune", delay: 625, duration: 105, cycle: 980, x0: 1450, y0: 395, k: .0021, radius: .15 },
+      { type: "pluto", delay: 750, duration: 100, cycle: 980, x0: 1300, y0: 270, k: .0022, radius: .13 },
+    ];
+    const celestialImages = Object.fromEntries(Object.entries({
+      jupiter: jupiterReal,
+      earth: earthReal,
+      mars: marsReal,
+      venus: venusReal,
+      saturn: saturnReal,
+      titan: titanReal,
+      neptune: neptuneReal,
+      pluto: plutoReal,
+      moon: moonReal,
+    }).map(([key, source]) => {
+      const image = new Image();
+      image.src = source;
+      return [key, image];
+    }));
+    const startedAt = performance.now();
+
+    const launchMeteor = (meteor) => {
+      meteor.active = true;
+      meteor.x = .62 + Math.random() * .25;
+      meteor.y = .04 + Math.random() * .34;
+      meteor.speed = .01 + Math.random() * .03;
+      meteor.life = 0;
+      meteor.duration = 2.4 + Math.random() * 1.6;
+    };
+
+    const drawOrbitingBody = (image, radius, time, orbit, frontPass) => {
+      if (!image.complete || !image.naturalWidth) return;
+      const angle = time * orbit.speed + orbit.phase;
+      const depth = Math.sin(angle);
+      if ((depth >= 0) !== frontPass) return;
+      const bodyRadius = radius * orbit.radius;
+      const x = Math.cos(angle) * radius * orbit.distance;
+      const y = depth * radius * orbit.tilt + radius * orbit.offsetY;
+      context.save();
+      context.globalAlpha *= .98;
+      context.beginPath();
+      context.arc(x, y, bodyRadius, 0, Math.PI * 2);
+      context.clip();
+      context.drawImage(image, x - bodyRadius, y - bodyRadius, bodyRadius * 2, bodyRadius * 2);
+      context.restore();
+    };
+
+    const drawSaturnSystem = (radius, time) => {
+      const saturn = celestialImages.saturn;
+      const titan = celestialImages.titan;
+      if (!saturn.complete || !saturn.naturalWidth) return;
+      const titanOrbit = { speed: .000035, phase: .6, radius: .18, distance: 3.2, tilt: .72, offsetY: -.08 };
+      drawOrbitingBody(titan, radius, time, titanOrbit, false);
+      const imageWidth = radius * 4.55;
+      const imageHeight = imageWidth * saturn.naturalHeight / saturn.naturalWidth;
+      context.drawImage(saturn, -imageWidth / 2, -imageHeight / 2, imageWidth, imageHeight);
+      drawOrbitingBody(titan, radius, time, titanOrbit, true);
+    };
+
+    const drawFlybyPlanet = (planet, time) => {
+      const seconds = (time - startedAt) / 1000;
+      const local = ((seconds - planet.delay) % planet.cycle + planet.cycle) % planet.cycle;
+      if (seconds < planet.delay || local > planet.duration) return;
+      const progress = local / planet.duration;
+      const edgeFade = Math.min(1, progress / .08, (1 - progress) / .08);
+      const perspectiveScale = Math.exp(planet.k * local);
+      const x = (1800 + (planet.x0 - 1800) * perspectiveScale) / COCKPIT_DESIGN_SIZE.width;
+      const y = (285 + (planet.y0 - 285) * perspectiveScale) / COCKPIT_DESIGN_SIZE.height;
+      const radius = Math.max(92, Math.min(width, height) * planet.radius * perspectiveScale);
+      context.save();
+      context.translate(x * width, y * height);
+      context.globalAlpha = .96 * edgeFade;
+      const image = celestialImages[planet.type];
+      if (!image.complete || !image.naturalWidth) {
+        context.restore();
+        return;
+      }
+      if (planet.type === "saturn") {
+        drawSaturnSystem(radius, time);
+        context.restore();
+        return;
+      }
+      const moonOrbit = { speed: .000045, phase: 1.1, radius: .21, distance: 1.62, tilt: .48, offsetY: -.08 };
+      if (planet.type === "earth") drawOrbitingBody(celestialImages.moon, radius, time, moonOrbit, false);
+      context.drawImage(image, -radius, -radius, radius * 2, radius * 2);
+      if (planet.type === "earth") drawOrbitingBody(celestialImages.moon, radius, time, moonOrbit, true);
+      context.restore();
+    };
+
+    const resize = () => {
+      width = Math.max(1, canvas.clientWidth);
+      height = Math.max(1, canvas.clientHeight);
+      ratio = Math.min(window.devicePixelRatio || 1, 2);
+      canvas.width = Math.round(width * ratio);
+      canvas.height = Math.round(height * ratio);
+      context.setTransform(ratio, 0, 0, ratio, 0, 0);
+    };
+
+    const draw = (time = performance.now()) => {
+      const delta = Math.min(32, time - lastTime);
+      lastTime = time;
+      context.clearRect(0, 0, width, height);
+      context.globalCompositeOperation = "source-over";
+      context.globalCompositeOperation = "lighter";
+
+      stars.forEach((star, index) => {
+        const offsetX = star.x - FLIGHT_FOCUS.x;
+        const offsetY = star.y - FLIGHT_FOCUS.y;
+        const perspectiveScale = Math.exp(star.speed * delta / 1000);
+        star.x = FLIGHT_FOCUS.x + offsetX * perspectiveScale;
+        star.y = FLIGHT_FOCUS.y + offsetY * perspectiveScale;
+        if (star.x < -.04 || star.x > 1.04 || star.y < -.04 || star.y > 1.04) {
+          const angle = Math.random() * Math.PI * 2;
+          const distance = .018 + Math.random() * .065;
+          star.x = FLIGHT_FOCUS.x + Math.cos(angle) * distance;
+          star.y = FLIGHT_FOCUS.y + Math.sin(angle) * distance * .62;
+        }
+        const pulse = .56 + Math.sin(time * .0014 + star.phase) * .34;
+        const x = star.x * width;
+        const y = star.y * height;
+        context.beginPath();
+        context.arc(x, y, star.size, 0, Math.PI * 2);
+        context.fillStyle = `rgba(${star.color},${pulse})`;
+        context.fill();
+        if (index % 13 === 0) {
+          const focusX = FLIGHT_FOCUS.x * width;
+          const focusY = FLIGHT_FOCUS.y * height;
+          const vectorX = x - focusX;
+          const vectorY = y - focusY;
+          const vectorLength = Math.max(1, Math.hypot(vectorX, vectorY));
+          const trailLength = star.size * (2.4 + star.speed * 210);
+          context.beginPath();
+          context.moveTo(x - vectorX / vectorLength * trailLength, y - vectorY / vectorLength * trailLength);
+          context.lineTo(x, y);
+          context.strokeStyle = `rgba(${star.color},${pulse * .45})`;
+          context.lineWidth = .55;
+          context.stroke();
+        }
+      });
+
+      context.globalCompositeOperation = "source-over";
+      flybyPlanets.forEach((planet) => drawFlybyPlanet(planet, time));
+      context.globalCompositeOperation = "lighter";
+
+      meteors.forEach((meteor) => {
+        const seconds = delta / 1000;
+        if (!meteor.active) {
+          meteor.wait -= seconds;
+          if (meteor.wait <= 0) launchMeteor(meteor);
+          return;
+        }
+
+        meteor.life += seconds;
+        const meteorScale = Math.exp(meteor.speed * seconds);
+        meteor.x = FLIGHT_FOCUS.x + (meteor.x - FLIGHT_FOCUS.x) * meteorScale;
+        meteor.y = FLIGHT_FOCUS.y + (meteor.y - FLIGHT_FOCUS.y) * meteorScale;
+        const progress = meteor.life / meteor.duration;
+        if (progress >= 1 || meteor.x < -.12 || meteor.y > 1.12) {
+          meteor.active = false;
+          meteor.wait = 7 + Math.random() * 10;
+          return;
+        }
+
+        const headX = meteor.x * width;
+        const headY = meteor.y * height;
+        const focusX = FLIGHT_FOCUS.x * width;
+        const focusY = FLIGHT_FOCUS.y * height;
+        const vectorX = headX - focusX;
+        const vectorY = headY - focusY;
+        const vectorLength = Math.max(1, Math.hypot(vectorX, vectorY));
+        const trailLength = 34 + progress * 28;
+        const tailX = headX - vectorX / vectorLength * trailLength;
+        const tailY = headY - vectorY / vectorLength * trailLength;
+        const alpha = Math.sin(progress * Math.PI) * .9;
+        const trail = context.createLinearGradient(tailX, tailY, headX, headY);
+        trail.addColorStop(0, "rgba(91,174,255,0)");
+        trail.addColorStop(.72, `rgba(126,211,255,${alpha * .34})`);
+        trail.addColorStop(1, `rgba(238,251,255,${alpha})`);
+        context.save();
+        context.beginPath();
+        context.moveTo(tailX, tailY);
+        context.lineTo(headX, headY);
+        context.strokeStyle = trail;
+        context.lineWidth = 1.15 + alpha * 1.25;
+        context.shadowColor = "rgba(116,211,255,.9)";
+        context.shadowBlur = 8 + alpha * 8;
+        context.stroke();
+        context.beginPath();
+        context.arc(headX, headY, 1.1 + alpha * 1.5, 0, Math.PI * 2);
+        context.fillStyle = `rgba(245,253,255,${alpha})`;
+        context.fill();
+        context.restore();
+      });
+
+      animationFrame = requestAnimationFrame(draw);
+    };
+
+    resize();
+    draw();
+    window.addEventListener("resize", resize);
+    return () => {
+      window.removeEventListener("resize", resize);
+      if (animationFrame) cancelAnimationFrame(animationFrame);
+    };
+  }, []);
+
+  const startHold = (event) => {
+    if (event.button !== undefined && event.button !== 0) return;
+    window.clearTimeout(releaseTimer.current);
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+    setPressState("holding");
+  };
+
+  const endHold = (event) => {
+    if (pressState !== "holding") return;
+    event.currentTarget.releasePointerCapture?.(event.pointerId);
+    setPressState("releasing");
+    releaseTimer.current = window.setTimeout(() => setPressState(""), 780);
+  };
+
+  useEffect(() => () => window.clearTimeout(releaseTimer.current), []);
+
+  return (
+    <div className="cute-home-bg cockpit-home-bg" ref={root}>
+      <div className={`cockpit-layer-stage cockpit-scene-${scene.id} ${pressState ? `is-${pressState}` : ""}`}>
+        <div className="cockpit-layer-wrap cockpit-space-wrap">
+          <img className="cockpit-layer" src={scene.space} alt="" />
+        </div>
+        <canvas
+          className="cockpit-space-canvas"
+          ref={spaceCanvas}
+          style={{
+            WebkitMaskImage: `url(${scene.space})`,
+            maskImage: `url(${scene.space})`,
+          }}
+        />
+        <div className="cockpit-layer-wrap cockpit-frame-wrap">
+          <img className="cockpit-layer" src={scene.frame} alt="" />
+        </div>
+        <div className="cockpit-layer-wrap cockpit-pilot-backing">
+          <img className="cockpit-layer" src={scene.pilot} alt="" />
+        </div>
+        <div className="cockpit-layer-wrap cockpit-pilot-wrap">
+          <img className="cockpit-layer" src={scene.pilot} alt="" />
+        </div>
+
+        {scene.instruments.map((instrument) => <div
+          className={`cockpit-instrument cockpit-instrument-${instrument.id}`}
+          key={instrument.id}
+          style={instrument.style}
+        >
+          <i className="instrument-grid" /><i className="instrument-scan" />
+          {instrument.mode === "radar" && <i className="instrument-radar" />}
+          {instrument.mode === "bars" && <span className="instrument-bars"><b /><b /><b /><b /></span>}
+          {instrument.mode === "wave" && <span className="instrument-wave" />}
+          {instrument.mode === "workshop" && <button
+            type="button"
+            className="cockpit-workshop-screen"
+            onClick={onOpenWorkshop}
+            aria-label="进入图像工坊"
+          ><ImageSquare weight="duotone" /><span>图像工坊</span><small>ENTER</small></button>}
+        </div>)}
+        <div className="cockpit-console-keys" style={scene.consoleKeys}>
+          {CONSOLE_KEYS.map((_, index) => <i key={index} />)}
+        </div>
+        <div className="cockpit-status-lights" style={scene.statusLights}>
+          {STATUS_LIGHTS.map((_, index) => <i key={index} />)}
+        </div>
+        <div className="cockpit-glass-sweep" />
+
+        {COCKPIT_SCENES.length > 1 && <div className="cockpit-scene-switcher" style={scene.switchPanel} aria-label="切换座舱角色">
+          {COCKPIT_SCENES.map((item, index) => <button
+            type="button"
+            className={index === sceneIndex ? "active" : ""}
+            key={item.id}
+            onClick={() => setSceneIndex(index)}
+            aria-label={`切换至 ${item.label}`}
+          ><i /><span>{String(index + 1).padStart(2, "0")}</span></button>)}
+        </div>}
+      </div>
+
+      <div className="cockpit-release-version" aria-label={`前端版本 ${RELEASE_VERSION.frontend}，后端版本 ${RELEASE_VERSION.backend}`}>
+        <span><b>前端</b><i>{RELEASE_VERSION.frontend}</i></span>
+        <span><b>后端</b><i>{RELEASE_VERSION.backend}</i></span>
+      </div>
+
+      <button
+        type="button"
+        className="cockpit-hold-zone"
+        aria-label="按住缓慢放大座舱画面"
+        onPointerDown={startHold}
+        onPointerUp={endHold}
+        onPointerCancel={endHold}
+        onLostPointerCapture={endHold}
+      />
+    </div>
+  );
 }
