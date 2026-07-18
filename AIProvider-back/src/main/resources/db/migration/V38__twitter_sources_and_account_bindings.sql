@@ -1,0 +1,23 @@
+ALTER TABLE c_ContentSources
+  ADD COLUMN ExternalUid VARCHAR(100) NULL AFTER SourceType,
+  ADD COLUMN ExternalHandle VARCHAR(100) NULL AFTER ExternalUid,
+  ADD COLUMN AdapterType VARCHAR(40) NOT NULL DEFAULT 'GENERIC' AFTER ExternalHandle,
+  ADD COLUMN CredentialEncrypted TEXT NULL AFTER SourceUrl,
+  ADD COLUMN CredentialHint VARCHAR(20) NULL AFTER CredentialEncrypted,
+  ADD COLUMN FetchLimit INT NOT NULL DEFAULT 5 AFTER PollIntervalMinutes,
+  ADD COLUMN LastTestedAt DATETIME(3) NULL AFTER LastCollectedAt;
+
+CREATE TABLE c_ContentAccountSources (
+  AccountId BIGINT NOT NULL,
+  SourceId BIGINT NOT NULL,
+  Enabled BOOLEAN NOT NULL DEFAULT TRUE,
+  CreatedAt DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  UpdatedAt DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+  PRIMARY KEY (AccountId, SourceId),
+  KEY IX_ContentAccountSources_Source (SourceId, Enabled),
+  CONSTRAINT FK_ContentAccountSources_Account FOREIGN KEY (AccountId) REFERENCES c_ContentAccounts(Id) ON DELETE CASCADE,
+  CONSTRAINT FK_ContentAccountSources_Source FOREIGN KEY (SourceId) REFERENCES c_ContentSources(Id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+ALTER TABLE c_ContentItems
+  ADD COLUMN FetchedByRunType VARCHAR(30) NOT NULL DEFAULT 'SCHEDULED' AFTER ProcessingStatus;

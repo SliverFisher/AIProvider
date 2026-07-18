@@ -19,7 +19,14 @@ class GeminiContentClientTest {
             .andExpect(jsonPath("$.system_instruction.parts[0].text").value("system prompt"))
             .andExpect(jsonPath("$.contents[0].parts[0].text").value("source content"))
             .andRespond(withSuccess("{\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"生成结果\"}]}}]}", MediaType.APPLICATION_JSON));
-        GeminiRuntimeConfig config=new GeminiRuntimeConfig(true,"https://generativelanguage.googleapis.com","gemini-3.5-flash","secret-key-value","rewrite","reply",new BigDecimal("0.7"),2048);
+        GeminiRuntimeConfig config=new GeminiRuntimeConfig(true,"https://generativelanguage.googleapis.com","gemini-3.5-flash","secret-key-value","relevance","rewrite","reply",new BigDecimal("0.7"),2048);
         assertEquals("生成结果",new GeminiContentClient(new ObjectMapper(),http).generate(config,"system prompt","source content"));server.verify();
+    }
+    @Test void requestsJsonResponseForClassification(){
+        RestTemplate http=new RestTemplate();MockRestServiceServer server=MockRestServiceServer.createServer(http);
+        server.expect(anything()).andExpect(jsonPath("$.generationConfig.responseMimeType").value("application/json"))
+            .andRespond(withSuccess("{\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"{\\\"relevant\\\":true,\\\"score\\\":0.9,\\\"reason\\\":\\\"相关\\\"}\"}]}}]}",MediaType.APPLICATION_JSON));
+        GeminiRuntimeConfig config=new GeminiRuntimeConfig(true,"https://generativelanguage.googleapis.com","model","key","relevance","rewrite","reply",BigDecimal.ZERO,512);
+        assertEquals("{\"relevant\":true,\"score\":0.9,\"reason\":\"相关\"}",new GeminiContentClient(new ObjectMapper(),http).generateJson(config,"system","content"));server.verify();
     }
 }

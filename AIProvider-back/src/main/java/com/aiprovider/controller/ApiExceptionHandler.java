@@ -6,6 +6,8 @@ import com.aiprovider.service.CryptoMarketUpstreamException;
 import com.aiprovider.service.FoundryUnavailableException;
 import com.aiprovider.service.RemoteCodexException;
 import com.aiprovider.service.ContentAiException;
+import com.aiprovider.service.ContentSourceException;
+import com.aiprovider.service.XiaohongshuAutomationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import org.springframework.web.bind.annotation.*;
@@ -51,4 +53,12 @@ public class ApiExceptionHandler {
     @ExceptionHandler(ContentAiException.class)
     @ResponseStatus(HttpStatus.BAD_GATEWAY)
     public Result<Void> contentAi(ContentAiException exception) { return Result.error(502, exception.getMessage()); }
+
+    @ExceptionHandler(ContentSourceException.class)
+    @ResponseStatus(HttpStatus.BAD_GATEWAY)
+    public Result<Void> contentSource(ContentSourceException exception) { return Result.error(502, exception.getMessage()); }
+
+    @ExceptionHandler(XiaohongshuAutomationException.class)
+    @ResponseStatus(HttpStatus.BAD_GATEWAY)
+    public Result<Void> xiaohongshuAutomation(XiaohongshuAutomationException exception) { return Result.error(502, exception.getMessage()); }
 }

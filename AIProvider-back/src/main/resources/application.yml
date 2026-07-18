@@ -83,3 +83,24 @@ content-ai:
   secret-encryption-key: ${CONTENT_AI_SECRET_ENCRYPTION_KEY:}
   connect-timeout-ms: ${CONTENT_AI_CONNECT_TIMEOUT_MS:5000}
   read-timeout-ms: ${CONTENT_AI_READ_TIMEOUT_MS:90000}
+
+content-platform:
+  secret-encryption-key: ${CONTENT_PLATFORM_SECRET_ENCRYPTION_KEY:}
+  connect-timeout-ms: ${CONTENT_PLATFORM_CONNECT_TIMEOUT_MS:5000}
+  read-timeout-ms: ${CONTENT_PLATFORM_READ_TIMEOUT_MS:30000}
+
+xiaohongshu:
+  headless: ${XIAOHONGSHU_HEADLESS:true}
+  navigation-timeout-ms: ${XIAOHONGSHU_NAVIGATION_TIMEOUT_MS:60000}
+  login-session-ttl-ms: ${XIAOHONGSHU_LOGIN_SESSION_TTL_MS:300000}
+  browser-executable-path: ${XIAOHONGSHU_BROWSER_EXECUTABLE_PATH:}
+  card-directory: ${XIAOHONGSHU_CARD_DIRECTORY:/opt/aiprovider/xhs-cards}
+
+content-operations:
+  scheduler-delay-ms: ${CONTENT_OPERATIONS_SCHEDULER_DELAY_MS:60000}
+  scheduler-initial-delay-ms: ${CONTENT_OPERATIONS_SCHEDULER_INITIAL_DELAY_MS:30000}
+
+twitter-source:
+  headless: ${TWITTER_SOURCE_HEADLESS:true}
+  navigation-timeout-ms: ${TWITTER_SOURCE_NAVIGATION_TIMEOUT_MS:60000}
+  browser-executable-path: ${TWITTER_SOURCE_BROWSER_EXECUTABLE_PATH:}

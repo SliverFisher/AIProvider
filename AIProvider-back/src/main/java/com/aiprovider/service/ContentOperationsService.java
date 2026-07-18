@@ -41,17 +41,6 @@ public class ContentOperationsService {
     }
 
     @Transactional
-    public ContentSourceVO createSource(ContentSourceCreateDTO dto){
-        if(dto==null) throw new IllegalArgumentException("采集源配置不能为空");
-        String type=required(dto.getSourceType(),"采集类型",30).toUpperCase(Locale.ROOT); if(!SOURCE_TYPES.contains(type)) throw new IllegalArgumentException("不支持的采集类型");
-        String url=required(dto.getSourceUrl(),"采集地址",1000); if(!url.startsWith("https://")) throw new IllegalArgumentException("采集地址必须使用 HTTPS");
-        int interval=dto.getPollIntervalMinutes()==null?240:dto.getPollIntervalMinutes(); range(interval,15,10080,"采集周期");
-        ContentOperationsMapper.SourceRecord record=new ContentOperationsMapper.SourceRecord(); record.setName(required(dto.getName(),"采集源名称",120));
-        record.setSourceType(type);record.setSourceUrl(url);record.setPollIntervalMinutes(interval);long id=repository.insertSource(record);
-        for(ContentSourceVO item:sources()) if(item.getId()==id) return item; throw new IllegalStateException("采集源创建后无法读取");
-    }
-
-    @Transactional
     public ContentOperationSettingsVO updateSettings(ContentOperationSettingsDTO dto){
         if(dto==null||dto.getAutomationEnabled()==null) throw new IllegalArgumentException("自动运行开关不能为空");
         Map<String,Object> currentSettings=repository.findSettings();if(currentSettings==null)throw new IllegalStateException("内容运营设置不存在");
@@ -65,8 +54,8 @@ public class ContentOperationsService {
 
     private List<ContentAccountVO> accounts(){List<ContentAccountVO> result=new ArrayList<>();for(Map<String,Object> row:repository.findAccounts())result.add(accountFrom(row));return result;}
     private ContentAccountVO account(long id){Map<String,Object> row=repository.findAccount(id);if(row==null)throw new IllegalArgumentException("小红书账号不存在");return accountFrom(row);}
-    private ContentAccountVO accountFrom(Map<String,Object> r){return new ContentAccountVO(number(r.get("id")),text(r.get("platform")),text(r.get("displayName")),text(r.get("accountHandle")),text(r.get("publishMode")),truth(r.get("enabled")),text(r.get("connectionStatus")),text(r.get("adapterStatus")),text(r.get("lastError")),time(r.get("lastPublishedAt")));}
-    private List<ContentSourceVO> sources(){List<ContentSourceVO> result=new ArrayList<>();for(Map<String,Object> r:repository.findSources())result.add(new ContentSourceVO(number(r.get("id")),text(r.get("name")),text(r.get("sourceType")),text(r.get("sourceUrl")),integer(r.get("pollIntervalMinutes")),truth(r.get("enabled")),text(r.get("lastStatus")),time(r.get("lastCollectedAt"))));return result;}
+    private ContentAccountVO accountFrom(Map<String,Object> r){String session=text(r.get("sessionEncrypted"));return new ContentAccountVO(number(r.get("id")),text(r.get("platform")),text(r.get("displayName")),text(r.get("accountHandle")),text(r.get("publishMode")),truth(r.get("enabled")),text(r.get("adapterType")),text(r.get("connectionStatus")),text(r.get("adapterStatus")),session!=null,text(r.get("sessionHint")),text(r.get("lastError")),time(r.get("lastConnectedAt")),time(r.get("lastPublishedAt")));}
+    private List<ContentSourceVO> sources(){List<ContentSourceVO> result=new ArrayList<>();for(Map<String,Object> r:repository.findSources()){String encrypted=text(r.get("credentialEncrypted"));result.add(new ContentSourceVO(number(r.get("id")),text(r.get("platform")),text(r.get("name")),text(r.get("sourceType")),text(r.get("externalUid")),text(r.get("externalHandle")),text(r.get("adapterType")),text(r.get("sourceUrl")),encrypted!=null,text(r.get("credentialHint")),integer(r.get("pollIntervalMinutes")),integer(r.get("fetchLimit")),truth(r.get("enabled")),text(r.get("lastStatus")),time(r.get("lastCollectedAt")),time(r.get("lastTestedAt"))));}return result;}
     private List<ContentPublicationVO> publications(){List<ContentPublicationVO> result=new ArrayList<>();for(Map<String,Object> r:repository.findRecentPublications())result.add(new ContentPublicationVO(number(r.get("id")),text(r.get("title")),text(r.get("accountName")),text(r.get("publishMode")),text(r.get("status")),integer(r.get("attemptCount")),text(r.get("errorMessage")),time(r.get("scheduledAt"))));return result;}
     private ContentOperationSettingsVO settingsFrom(Map<String,Object> r){if(r==null)throw new IllegalStateException("内容运营设置不存在");return new ContentOperationSettingsVO(truth(r.get("automationEnabled")),text(r.get("defaultPublishMode")),integer(r.get("crawlIntervalMinutes")),integer(r.get("commentIntervalMinutes")),text(r.get("contentModel")),time(r.get("updatedAt")));}
     private String mode(String value){String v=required(value,"发布模式",20).toUpperCase(Locale.ROOT);if(!MODES.contains(v))throw new IllegalArgumentException("发布模式只能是 AUTO 或 MANUAL");return v;}

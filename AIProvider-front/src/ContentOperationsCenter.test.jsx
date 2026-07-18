@@ -9,11 +9,12 @@ const overview = { settings:{automationEnabled:true,defaultPublishMode:"AUTO",cr
 
 describe("ContentOperationsCenter", () => {
   afterEach(()=>{cleanup();vi.unstubAllGlobals();});
-  it("shows the automation pipeline without claiming an unavailable adapter", async()=>{
+  it("shows the implemented publishing step and the still-pending comment adapter", async()=>{
     vi.stubGlobal("fetch",vi.fn(async()=>ok(overview))); render(<ContentOperationsCenter/>);
     expect(await screen.findByText("小红书运营控制台")).toBeTruthy();
     expect(screen.getByText("自动运行中")).toBeTruthy();
-    expect(screen.getByText("尚未配置获授权发布通道")).toBeTruthy();
+    expect(screen.getByText("扫码会话 · 自动文字卡 · 幂等发送")).toBeTruthy();
+    expect(screen.getByText("尚未接入评论网页适配器")).toBeTruthy();
   });
   it("updates an account between automatic and manual mode", async()=>{
     vi.stubGlobal("fetch",vi.fn(async(input)=>String(input).endsWith("/overview")?ok(overview):ok({...overview.accounts[0],publishMode:"MANUAL"})));
@@ -22,10 +23,24 @@ describe("ContentOperationsCenter", () => {
     await waitFor(()=>expect(fetch).toHaveBeenCalledWith("/api/content-operations/accounts/1",expect.objectContaining({method:"PATCH"})));
   });
   it("loads Gemini settings without exposing the existing API key", async()=>{
-    const aiConfig={provider:"GEMINI",enabled:true,apiKeyConfigured:true,apiKeyHint:"••••1234",apiBaseUrl:"https://generativelanguage.googleapis.com",model:"gemini-3.5-flash",contentRewritePrompt:"这是用于测试的小红书内容改写提示词，长度必须满足后端要求。",commentReplyPrompt:"这是用于测试的小红书评论回复提示词，长度必须满足后端要求。",temperature:0.7,maxOutputTokens:2048};
+    const aiConfig={provider:"GEMINI",enabled:true,apiKeyConfigured:true,apiKeyHint:"••••1234",apiBaseUrl:"https://generativelanguage.googleapis.com",model:"gemini-3.5-flash",relevancePrompt:"这是用于测试的人工智能内容相关性判断提示词，长度必须满足后端要求。",contentRewritePrompt:"这是用于测试的小红书内容改写提示词，长度必须满足后端要求。",commentReplyPrompt:"这是用于测试的小红书评论回复提示词，长度必须满足后端要求。",temperature:0.7,maxOutputTokens:2048};
     vi.stubGlobal("fetch",vi.fn(async(input)=>String(input).endsWith("/ai-config")?ok(aiConfig):ok(overview)));
     render(<ContentOperationsCenter/>);fireEvent.click(await screen.findByRole("button",{name:"自动化设置"}));
     expect(await screen.findByText("Gemini 内容生成")).toBeTruthy();expect(screen.getByText("密钥已配置 ••••1234")).toBeTruthy();
     const keyInput=screen.getByPlaceholderText("留空则保留现有密钥");expect(keyInput.value).toBe("");expect(keyInput.type).toBe("password");
   });
+  it("classifies the latest fetched item before showing it as relevant", async()=>{
+    const withSource={...overview,sources:[{id:3,name:"Elon Musk",adapterType:"TWITTER_API",externalUid:"44196397",pollIntervalMinutes:240,credentialConfigured:true,credentialHint:"••••abcd",lastStatus:"SUCCESS"}]};
+    const item={id:8,authorName:"Elon Musk",rawText:"New AI model",sourceUrl:"https://x.com/8",relevanceStatus:"PENDING"};
+    vi.stubGlobal("fetch",vi.fn(async(input)=>{const url=String(input);if(url.endsWith("/sources/3/test-fetch"))return ok({sourceId:3,fetchedCount:1,newCount:1,items:[item]});if(url.endsWith("/items/8/classify"))return ok({contentItemId:8,relevant:true,score:0.94,reason:"讨论 AI 模型",checkedAt:"2026-07-18T22:00:00"});return ok(withSource);}));
+    render(<ContentOperationsCenter/>);fireEvent.click(await screen.findByRole("button",{name:"采集源"}));fireEvent.click(screen.getByRole("button",{name:"测试拉取并判断"}));
+    expect(await screen.findByText("AI 相关")).toBeTruthy();expect(screen.getByText("相关度 94%")).toBeTruthy();expect(fetch).toHaveBeenCalledWith("/api/content-operations/items/8/classify",expect.objectContaining({method:"POST"}));
+  });
+  it("runs the bound account test pipeline after a QR session is configured",async()=>{
+    const connected={...overview,accounts:[{...overview.accounts[0],sessionConfigured:true,lastConnectedAt:"2026-07-18T22:00:00",adapterStatus:"READY"}]};
+    vi.stubGlobal("fetch",vi.fn(async(input)=>{const url=String(input);if(url.endsWith("/accounts/1/sources"))return ok([]);if(url.endsWith("/accounts/1/test-pipeline"))return ok([{sourceId:2,contentItemId:3,result:"PUBLISHED",message:"已生成文字卡并发布到小红书",draft:{title:"AI新进展"}}]);return ok(connected);}));
+    render(<ContentOperationsCenter/>);fireEvent.click(await screen.findByRole("button",{name:"账号"}));fireEvent.click(await screen.findByRole("button",{name:"一键测试小红书"}));expect(await screen.findByText("已发布")).toBeTruthy();expect(screen.getByText("AI新进展")).toBeTruthy();expect(fetch).toHaveBeenCalledWith("/api/content-operations/accounts/1/test-pipeline",expect.objectContaining({method:"POST"}));
+  });
+  it("defaults new Twitter sources to public web collection without an API key",async()=>{vi.stubGlobal("fetch",vi.fn(async()=>ok(overview)));render(<ContentOperationsCenter/>);fireEvent.click(await screen.findByRole("button",{name:"采集源"}));fireEvent.click(screen.getByRole("button",{name:"添加内容来源"}));expect(screen.getByRole("combobox",{name:"采集方式"}).value).toBe("TWITTER_WEB");expect(screen.getByLabelText("Twitter 用户名")).toBeTruthy();expect(screen.queryByLabelText("Bearer Token")).toBeNull();expect(screen.getByText("按公开用户名读取；如果 X 对服务器要求登录会明确报错。")).toBeTruthy();});
+  it("requires a numeric UID and bearer token for the official API adapter",async()=>{vi.stubGlobal("fetch",vi.fn(async()=>ok(overview)));render(<ContentOperationsCenter/>);fireEvent.click(await screen.findByRole("button",{name:"采集源"}));fireEvent.click(screen.getByRole("button",{name:"添加内容来源"}));fireEvent.change(screen.getByRole("combobox",{name:"采集方式"}),{target:{value:"TWITTER_API"}});expect(screen.getByLabelText("Twitter UID")).toBeTruthy();expect(screen.getByLabelText("Bearer Token")).toBeTruthy();expect(screen.queryByLabelText("Twitter 用户名")).toBeNull();});
 });

@@ -19,9 +19,16 @@ public class GeminiContentClient {
     @Autowired public GeminiContentClient(ObjectMapper json,@Value("${content-ai.connect-timeout-ms:5000}") int connectTimeout,@Value("${content-ai.read-timeout-ms:90000}") int readTimeout){this(json,rest(connectTimeout,readTimeout));}
     GeminiContentClient(ObjectMapper json,RestTemplate http){this.json=json;this.http=http;}
     public String generate(GeminiRuntimeConfig config,String systemPrompt,String userPrompt){
+        return generate(config,systemPrompt,userPrompt,false);
+    }
+    public String generateJson(GeminiRuntimeConfig config,String systemPrompt,String userPrompt){
+        return generate(config,systemPrompt,userPrompt,true);
+    }
+    private String generate(GeminiRuntimeConfig config,String systemPrompt,String userPrompt,boolean jsonResponse){
         ObjectNode request=json.createObjectNode();request.putObject("system_instruction").putArray("parts").addObject().put("text",systemPrompt);
         request.putArray("contents").addObject().put("role","user").putArray("parts").addObject().put("text",userPrompt);
         ObjectNode generation=request.putObject("generationConfig");generation.put("temperature",config.temperature);generation.put("maxOutputTokens",config.maxOutputTokens);
+        if(jsonResponse)generation.put("responseMimeType","application/json");
         HttpHeaders headers=new HttpHeaders();headers.setContentType(MediaType.APPLICATION_JSON);headers.set("x-goog-api-key",config.apiKey);
         URI uri=URI.create(config.apiBaseUrl+"/v1beta/models/"+config.model+":generateContent");
         try{ResponseEntity<JsonNode> response=http.exchange(uri,HttpMethod.POST,new HttpEntity<>(request,headers),JsonNode.class);return extract(response.getBody());}

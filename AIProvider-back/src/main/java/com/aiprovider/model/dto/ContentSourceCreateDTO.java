@@ -5,6 +5,11 @@ public class ContentSourceCreateDTO {
     private String sourceType;
     private String sourceUrl;
     private Integer pollIntervalMinutes;
+    private String platform;
+    private String externalUid;
+    private String externalHandle;
+    private String adapterType;
+    private String accessToken;
     public String getName() { return name; }
     public void setName(String value) { this.name = value; }
     public String getSourceType() { return sourceType; }
@@ -13,4 +18,14 @@ public class ContentSourceCreateDTO {
     public void setSourceUrl(String value) { this.sourceUrl = value; }
     public Integer getPollIntervalMinutes() { return pollIntervalMinutes; }
     public void setPollIntervalMinutes(Integer value) { this.pollIntervalMinutes = value; }
+    public String getPlatform() { return platform; }
+    public void setPlatform(String value) { this.platform = value; }
+    public String getExternalUid() { return externalUid; }
+    public void setExternalUid(String value) { this.externalUid = value; }
+    public String getExternalHandle() { return externalHandle; }
+    public void setExternalHandle(String value) { this.externalHandle = value; }
+    public String getAdapterType() { return adapterType; }
+    public void setAdapterType(String value) { this.adapterType = value; }
+    public String getAccessToken() { return accessToken; }
+    public void setAccessToken(String value) { this.accessToken = value; }
 }
