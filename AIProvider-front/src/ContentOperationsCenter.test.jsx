@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import React from "react";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import ContentOperationsCenter from "./ContentOperationsCenter";
 
@@ -8,7 +8,7 @@ const ok = (data) => new Response(JSON.stringify({ code:200, data }), { status:2
 const overview = { settings:{automationEnabled:true,defaultPublishMode:"AUTO",crawlIntervalMinutes:240,commentIntervalMinutes:30,contentModel:"gemini"}, counters:{collectedToday:3,readyDrafts:2,publishedToday:1,pendingComments:4,failedPublications:0}, accounts:[{id:1,displayName:"主账号",accountHandle:"operator",publishMode:"AUTO",enabled:true,adapterStatus:"NOT_CONFIGURED"}], sources:[], recentPublications:[] };
 
 describe("ContentOperationsCenter", () => {
-  afterEach(()=>{cleanup();vi.unstubAllGlobals();});
+  afterEach(()=>{cleanup();vi.useRealTimers();vi.unstubAllGlobals();});
   it("shows the implemented publishing step and the still-pending comment adapter", async()=>{
     vi.stubGlobal("fetch",vi.fn(async()=>ok(overview))); render(<ContentOperationsCenter/>);
     expect(await screen.findByText("小红书运营控制台")).toBeTruthy();
@@ -40,6 +40,17 @@ describe("ContentOperationsCenter", () => {
     const connected={...overview,accounts:[{...overview.accounts[0],sessionConfigured:true,lastConnectedAt:"2026-07-18T22:00:00",adapterStatus:"READY"}]};
     vi.stubGlobal("fetch",vi.fn(async(input)=>{const url=String(input);if(url.endsWith("/accounts/1/sources"))return ok([]);if(url.endsWith("/accounts/1/test-pipeline"))return ok([{sourceId:2,contentItemId:3,result:"PUBLISHED",message:"已生成文字卡并发布到小红书",draft:{title:"AI新进展"}}]);return ok(connected);}));
     render(<ContentOperationsCenter/>);fireEvent.click(await screen.findByRole("button",{name:"账号"}));fireEvent.click(await screen.findByRole("button",{name:"一键测试小红书"}));expect(await screen.findByText("已发布")).toBeTruthy();expect(screen.getByText("AI新进展")).toBeTruthy();expect(fetch).toHaveBeenCalledWith("/api/content-operations/accounts/1/test-pipeline",expect.objectContaining({method:"POST"}));
+  });
+  it("waits for each QR status request before scheduling the next poll",async()=>{
+    let finishPoll;let pollCalls=0;const pendingPoll=new Promise(resolve=>{finishPoll=resolve;});
+    vi.stubGlobal("fetch",vi.fn(async(input,init)=>{const url=String(input);if(url.endsWith("/accounts/1/sources"))return ok([]);if(url.endsWith("/accounts/1/xhs-login")&&init?.method==="POST")return ok({sessionId:"qr-session",status:"WAITING_SCAN",qrImageDataUrl:"data:image/png;base64,qr"});if(url.endsWith("/accounts/1/xhs-login/qr-session")){pollCalls++;return pendingPoll;}return ok(overview);}));
+    render(<ContentOperationsCenter/>);fireEvent.click(await screen.findByRole("button",{name:"账号"}));vi.useFakeTimers();
+    await act(async()=>{fireEvent.click(screen.getByRole("button",{name:"扫码登录小红书"}));await Promise.resolve();await Promise.resolve();});
+    expect(screen.getByAltText("小红书登录二维码")).toBeTruthy();
+    await act(async()=>{await vi.advanceTimersByTimeAsync(8000);});expect(pollCalls).toBe(1);
+    await act(async()=>{finishPoll(ok({sessionId:"qr-session",status:"WAITING_SCAN",qrImageDataUrl:null}));await Promise.resolve();});
+    expect(screen.getByAltText("小红书登录二维码")).toBeTruthy();
+    await act(async()=>{await vi.advanceTimersByTimeAsync(2000);});expect(pollCalls).toBe(2);
   });
   it("defaults new Twitter sources to an encrypted X session without an API key",async()=>{vi.stubGlobal("fetch",vi.fn(async()=>ok(overview)));render(<ContentOperationsCenter/>);fireEvent.click(await screen.findByRole("button",{name:"采集源"}));fireEvent.click(screen.getByRole("button",{name:"添加内容来源"}));expect(screen.getByRole("combobox",{name:"采集方式"}).value).toBe("TWITTER_WEB");expect(screen.getByLabelText("Twitter 用户名")).toBeTruthy();expect(screen.getByLabelText("X Cookie").type).toBe("password");expect(screen.queryByLabelText("Bearer Token")).toBeNull();expect(screen.getByText("使用你的 X 登录会话读取真实时间线；游客页面只返回热门内容，不能作为最新推文。")).toBeTruthy();});
   it("requires a numeric UID and bearer token for the official API adapter",async()=>{vi.stubGlobal("fetch",vi.fn(async()=>ok(overview)));render(<ContentOperationsCenter/>);fireEvent.click(await screen.findByRole("button",{name:"采集源"}));fireEvent.click(screen.getByRole("button",{name:"添加内容来源"}));fireEvent.change(screen.getByRole("combobox",{name:"采集方式"}),{target:{value:"TWITTER_API"}});expect(screen.getByLabelText("Twitter UID")).toBeTruthy();expect(screen.getByLabelText("Bearer Token")).toBeTruthy();expect(screen.queryByLabelText("Twitter 用户名")).toBeNull();});
