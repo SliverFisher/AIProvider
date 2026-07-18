@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { ArrowsClockwise, ArrowsDownUp, CheckCircle, Clock, Coins, Cpu, Gauge, Gift, HardDrives, Pulse, Warning } from "@phosphor-icons/react";
 import "./MonitorCenter.css";
 import "./MonitorCenterEnhancements.css";
@@ -24,6 +24,8 @@ const percent = (used, total) => total ? Math.min(100, Math.max(0, used / total 
 const dateTime = (value) => value ? new Date(value).toLocaleString("zh-CN", { hour12: false }) : "—";
 const money = (value, currency = "USD") => value == null ? "—" : new Intl.NumberFormat("zh-CN", { style: "currency", currency: currency || "USD", maximumFractionDigits: 2 }).format(Number(value));
 const apiReason = (value) => value ? value.replace(/Exception$/, "").replace(/([a-z])([A-Z])/g, "$1 $2") : "AWS API 不可用";
+const CLOUD_LABELS = { aws: "AWS", tencent: "腾讯云" };
+const cloudLabel = (key, server) => server?.displayName || CLOUD_LABELS[key] || key.toUpperCase();
 
 export default function MonitorCenter() {
   const [summary, setSummary] = useState(monitorSummaryCache);
@@ -43,16 +45,23 @@ export default function MonitorCenter() {
     return () => clearInterval(timer);
   }, [load]);
 
+  const cloudProviders = useMemo(() => Object.entries(summary?.cloudServers || {}).map(([key, value]) => ({
+    key,
+    label: cloudLabel(key, value),
+  })), [summary?.cloudServers]);
+  useEffect(() => {
+    if (cloudProviders.length && !cloudProviders.some((provider) => provider.key === selectedCloud)) {
+      setSelectedCloud(cloudProviders[0].key);
+    }
+  }, [cloudProviders, selectedCloud]);
   const server = summary?.cloudServers?.[selectedCloud];
+  const selectedCloudLabel = cloudLabel(selectedCloud, server);
   return <section className={`cloud-monitor ${loading ? "is-loading" : ""}`}>
     <div className="monitor-kawaii-crown" aria-hidden="true"><i>✦</i><b>♡ SYSTEM GUARDIAN ♡</b><i>✦</i></div>
     <header className="cloud-toolbar">
-      <div><span className="eyebrow">SERVICE · SERVER · {selectedCloud === "aws" ? "AWS" : "TENCENT CLOUD"}</span><p>服务请求、服务器资源、实时网速与本月流量</p></div>
+      <div><span className="eyebrow">SERVICE · SERVER · {selectedCloudLabel.toUpperCase()}</span><p>服务请求、服务器资源、实时网速与本月流量</p></div>
       <div className="cloud-toolbar-actions">
-        <div className="cloud-provider-switch" aria-label="云服务器切换">
-          <button type="button" aria-pressed={selectedCloud === "tencent"} onClick={() => setSelectedCloud("tencent")}>腾讯云</button>
-          <button type="button" aria-pressed={selectedCloud === "aws"} onClick={() => setSelectedCloud("aws")}>AWS</button>
-        </div>
+        <label className="cloud-provider-select"><span>云服务器</span><select aria-label="云服务器" value={selectedCloud} onChange={(event) => setSelectedCloud(event.target.value)}>{cloudProviders.map((provider) => <option key={provider.key} value={provider.key}>{provider.label}</option>)}</select></label>
         <button type="button" onClick={() => load()} disabled={refreshing || loading}><ArrowsClockwise className={refreshing || loading ? "spin" : ""} />{loading ? "正在读取" : refreshing ? "刷新中" : "手动刷新"}</button>
       </div>
     </header>
@@ -65,7 +74,7 @@ export default function MonitorCenter() {
       <Capacity title="服务器内存" icon={Cpu} resource={server?.memory} collectedAt={server?.collectedAt} />
       <Capacity title="系统磁盘" icon={HardDrives} resource={server?.disk} collectedAt={server?.collectedAt} />
       <Network network={server?.network} instance={server?.instance} />
-      {selectedCloud === "aws" ? <AwsBilling billing={summary?.awsBilling} /> : <Traffic traffic={server?.traffic} provider={selectedCloud} />}
+      {selectedCloud === "aws" ? <AwsBilling billing={summary?.awsBilling} /> : <Traffic traffic={server?.traffic} provider={selectedCloud} providerLabel={selectedCloudLabel} />}
     </div>
   </section>;
 }
@@ -149,14 +158,14 @@ function Network({ network, instance }) {
   </article>;
 }
 
-function Traffic({ traffic, provider }) {
+function Traffic({ traffic, provider, providerLabel }) {
   const usage = percent(traffic?.usedBytes, traffic?.totalBytes);
   const tone = usage >= 90 ? "danger" : usage >= 70 ? "warning" : "normal";
   return <article className="cloud-card traffic-card">
-    <header><Gauge /><div><h2>{provider === "aws" ? "AWS 本月 100 GB 流量" : "腾讯云本期流量包"}</h2><span>{traffic?.stale ? "数据可能已过期" : traffic?.status || "不可用"}</span></div><b className={traffic?.stale ? "warning" : tone}>{traffic?.available ? `${usage.toFixed(1)}%` : "—"}</b></header>
+    <header><Gauge /><div><h2>{provider === "aws" ? "AWS 本月 100 GB 流量" : `${providerLabel}本期流量`}</h2><span>{traffic?.stale ? "数据可能已过期" : traffic?.status || "不可用"}</span></div><b className={traffic?.stale ? "warning" : tone}>{traffic?.available ? `${usage.toFixed(1)}%` : "—"}</b></header>
     <div className="cloud-main"><strong>{bytes(traffic?.usedBytes)}</strong><span>/ {bytes(traffic?.totalBytes)}</span></div>
     <div className="cloud-track"><i className={tone} style={{ width: `${usage}%` }} /></div>
     <dl><div><dt>剩余</dt><dd>{bytes(traffic?.remainingBytes)}</dd></div><div><dt>超额</dt><dd>{bytes(traffic?.overflowBytes)}</dd></div><div><dt>流量周期</dt><dd>{dateTime(traffic?.periodStart)} — {dateTime(traffic?.periodEnd)}</dd></div></dl>
-    <small>{provider === "aws" ? "AWS CloudWatch API · 100GB 为全账户免费公网出站额度" : "腾讯云 API 采集"} {dateTime(traffic?.collectedAt)}</small>
+    <small>{provider === "aws" ? "AWS CloudWatch API · 100GB 为全账户免费公网出站额度" : `${providerLabel} API 采集`} {dateTime(traffic?.collectedAt)}</small>
   </article>;
 }

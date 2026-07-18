@@ -12,7 +12,8 @@ describe("MonitorCenter request chart", () => {
       const url = String(input);
       if (url.endsWith("/cloud-servers")) return json({
         aws: { displayName: "AWS 东京", status: "UP", collectedAt: "2026-07-15T02:00:00+08:00", memory: { available: true, usedBytes: 1, totalBytes: 2 }, disk: { available: true, usedBytes: 1, totalBytes: 2 }, network: { available: true, inboundBytesPerSecond: 1048576, outboundBytesPerSecond: 524288, monthInboundBytes: 100, monthOutboundBytes: 200 }, traffic: { available: true, status: "CLOUDWATCH_API_AWS_100GB_FREE_DTO", usedBytes: 200, totalBytes: 100000000000 }, instance: { instanceId: "i-aws", instanceType: "c7i-flex.large", availabilityZone: "ap-northeast-1c", publicIpv4: "35.78.120.126", awsApiStatus: "CLOUDWATCH_API_AVAILABLE" } },
-        tencent: { displayName: "腾讯云", status: "OFFLINE", collectedAt: "2026-07-15T02:00:00+08:00", memory: { available: false }, disk: { available: false }, network: { available: false }, traffic: { available: false }, instance: { instanceId: "lhins-test", publicIpv4: "124.222.185.195", awsApiStatus: "NOT_APPLICABLE" } }
+        tencent: { displayName: "腾讯云", status: "OFFLINE", collectedAt: "2026-07-15T02:00:00+08:00", memory: { available: false }, disk: { available: false }, network: { available: false }, traffic: { available: false }, instance: { instanceId: "lhins-test", publicIpv4: "124.222.185.195", awsApiStatus: "NOT_APPLICABLE" } },
+        aliyun: { displayName: "阿里云杭州", status: "UP", collectedAt: "2026-07-15T02:00:00+08:00", memory: { available: true, usedBytes: 1, totalBytes: 4 }, disk: { available: true, usedBytes: 1, totalBytes: 8 }, network: { available: true }, traffic: { available: false }, instance: { instanceId: "i-aliyun" } }
       });
       if (url.endsWith("/ai-overview")) return json({ totalRequests: 5, successRate: 80, failureCount: 1, p95DurationMs: 420 });
       if (url.endsWith("/aws-billing")) return json({ collectedAt: "2026-07-15T02:00:00+08:00", plan: { available: true, type: "FREE", status: "ACTIVE", remainingCredits: 90, currency: "USD" }, cost: { available: true, netUnblendedCost: 1.25, currency: "USD", estimated: true }, credits: { available: true, remainingAmount: 90, currency: "USD", items: [] }, freeTier: { available: true, items: [{ service: "AmazonEBS", description: "EBS storage", actual: 20, limit: 30, unit: "GB-Mo", usagePercent: 66.7 }] } });
@@ -31,13 +32,16 @@ describe("MonitorCenter request chart", () => {
     expect(screen.getByText("P95 响应", { selector: "dt" })).toBeTruthy();
   });
 
-  it("switches between AWS and Tencent without removing the stopped Tencent monitor", async () => {
+  it("selects any cloud provider returned by the backend without hard-coded provider buttons", async () => {
     render(<MonitorCenter />);
     expect(await screen.findByText("AWS 东京健康状态")).toBeTruthy();
     expect(screen.getByText(/c7i-flex.large/)).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "腾讯云" }));
+    fireEvent.change(screen.getByRole("combobox", { name: "云服务器" }), { target: { value: "tencent" } });
     expect(await screen.findByText("腾讯云健康状态")).toBeTruthy();
     expect(screen.getByText("OFFLINE")).toBeTruthy();
+    fireEvent.change(screen.getByRole("combobox", { name: "云服务器" }), { target: { value: "aliyun" } });
+    expect(await screen.findByText("阿里云杭州健康状态")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "AWS" })).toBeNull();
   });
 
   it("shows real AWS plan, cost, credits and free-tier usage", async () => {
