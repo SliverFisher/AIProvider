@@ -122,8 +122,11 @@ public class XiaohongshuWebAdapter {
             pageLocation = safeLocation(page.url());
             if (isLoginUrl(page.url())) throw new XiaohongshuAutomationException("小红书登录会话已过期，请重新扫码登录");
             stage = "切换到图文发布";
-            if (!clickIfVisible(page, "上传图文") && !clickIfVisible(page, "发布图文"))
-                throw new XiaohongshuAutomationException("小红书发布页未找到图文发布入口");
+            if (!clickIfVisible(page, "上传图文") && !clickIfVisible(page, "发布图文")) {
+                String diagnostic = publishPageDiagnostic(page);
+                log.error("XHS_PUBLISH image_entry_missing page={} diagnostic={}", safeLocation(page.url()), diagnostic);
+                throw new XiaohongshuAutomationException("小红书发布页未找到图文发布入口；页面诊断：" + diagnostic);
+            }
             stage = "查找图片上传控件";
             Locator imageInputs = page.locator(IMAGE_UPLOAD_INPUT);
             if (imageInputs.count() == 0) throw new XiaohongshuAutomationException("小红书图文发布页未生成图片上传控件");
@@ -153,6 +156,7 @@ public class XiaohongshuWebAdapter {
             }
             throw new XiaohongshuAutomationException("已点击发布，但小红书未返回明确成功结果；请人工确认该任务，系统不会自动重试", true);
         } catch (XiaohongshuAutomationException e) {
+            log.error("XHS_PUBLISH stopped stage={} page={} reason={}", stage, pageLocation, e.getMessage());
             throw e;
         } catch (PlaywrightException e) {
             String reason = safe(e);
@@ -288,6 +292,19 @@ public class XiaohongshuWebAdapter {
         } catch (PlaywrightException ignored) {
         }
         return false;
+    }
+
+    private String publishPageDiagnostic(Page page) {
+        List<String> accepts = new ArrayList<>();
+        try {
+            Locator inputs = page.locator("input[type='file']");
+            for (int i = 0; i < inputs.count(); i++) accepts.add(String.valueOf(inputs.nth(i).getAttribute("accept")));
+            String body = page.locator("body").innerText().replaceAll("\\s+", " ").trim();
+            if (body.length() > 1600) body = body.substring(0, 1600);
+            return "url=" + safeLocation(page.url()) + ", fileAccepts=" + accepts + ", visibleText=" + body;
+        } catch (PlaywrightException e) {
+            return "url=" + safeLocation(page.url()) + ", diagnosticError=" + e.getClass().getSimpleName();
+        }
     }
 
     private void waitForUpload(Page page) {
