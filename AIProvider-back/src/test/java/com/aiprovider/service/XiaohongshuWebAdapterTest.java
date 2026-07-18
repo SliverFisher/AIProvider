@@ -39,5 +39,12 @@ class XiaohongshuWebAdapterTest {
     @Test void extractsTheUsefulPlaywrightMessageInsteadOfErrorBrace() {
         String raw="Error {\n message='Timeout 60000ms exceeded while waiting for locator input[type=file]\n name='TimeoutError\n stack='ignored\n}";
         assertEquals("Timeout 60000ms exceeded while waiting for locator input[type=file]",XiaohongshuWebAdapter.concisePlaywrightError(raw,"PlaywrightException"));
+        assertEquals("Timeout 60000ms exceeded",XiaohongshuWebAdapter.concisePlaywrightError("Error { message='Timeout 60000ms exceeded name='TimeoutError stack='ignored }","PlaywrightException"));
+    }
+
+    @Test void imageUploadSelectorCannotFallBackToTheVideoInput() {
+        assertTrue(XiaohongshuWebAdapter.IMAGE_UPLOAD_INPUT.contains(".png"));
+        assertFalse(XiaohongshuWebAdapter.IMAGE_UPLOAD_INPUT.contains(".mp4"));
+        assertFalse(XiaohongshuWebAdapter.IMAGE_UPLOAD_INPUT.endsWith("input[type='file']"));
     }
 }

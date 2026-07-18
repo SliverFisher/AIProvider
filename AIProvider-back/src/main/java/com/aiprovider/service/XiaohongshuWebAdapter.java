@@ -20,6 +20,7 @@ public class XiaohongshuWebAdapter {
     private static final Logger log = LoggerFactory.getLogger(XiaohongshuWebAdapter.class);
     private static final Pattern QR_CODE_STATUS = Pattern.compile("\\\"codeStatus\\\"\\s*:\\s*([0-3])");
     private static final Pattern SAFE_RESPONSE_FIELD = Pattern.compile("\\\"(codeStatus|code|result|success)\\\"\\s*:\\s*(\\\"[^\\\"]{0,80}\\\"|-?\\d+|true|false|null)");
+    static final String IMAGE_UPLOAD_INPUT = "input[type='file'][accept*='.jpg'],input[type='file'][accept*='.jpeg'],input[type='file'][accept*='.png'],input[type='file'][accept*='.webp']";
     private final boolean headless;
     private final double timeoutMs;
     private final long loginSessionTtlMs;
@@ -121,10 +122,12 @@ public class XiaohongshuWebAdapter {
             pageLocation = safeLocation(page.url());
             if (isLoginUrl(page.url())) throw new XiaohongshuAutomationException("小红书登录会话已过期，请重新扫码登录");
             stage = "切换到图文发布";
-            if (!clickIfVisible(page, "上传图文")) clickIfVisible(page, "发布图文");
+            if (!clickIfVisible(page, "上传图文") && !clickIfVisible(page, "发布图文"))
+                throw new XiaohongshuAutomationException("小红书发布页未找到图文发布入口");
             stage = "查找图片上传控件";
-            Locator imageInput = page.locator("input[type='file'][accept*='image'],input[type='file']").first();
-            imageInput.waitFor(new Locator.WaitForOptions().setTimeout(timeoutMs));
+            Locator imageInputs = page.locator(IMAGE_UPLOAD_INPUT);
+            if (imageInputs.count() == 0) throw new XiaohongshuAutomationException("小红书图文发布页未生成图片上传控件");
+            Locator imageInput = imageInputs.first();
             stage = "上传文字卡";
             imageInput.setInputFiles(card);
             waitForUpload(page);
@@ -273,11 +276,14 @@ public class XiaohongshuWebAdapter {
 
     private boolean clickIfVisible(Page page, String text) {
         try {
-            Locator target = page.getByText(text, new Page.GetByTextOptions().setExact(true)).first();
-            if (target.count() > 0 && target.isVisible()) {
-                target.click();
-                page.waitForTimeout(300);
-                return true;
+            Locator targets = page.getByText(text, new Page.GetByTextOptions().setExact(false));
+            for (int i = 0; i < targets.count(); i++) {
+                Locator target = targets.nth(i);
+                if (target.isVisible()) {
+                    target.click();
+                    page.waitForTimeout(500);
+                    return true;
+                }
             }
         } catch (PlaywrightException ignored) {
         }
@@ -350,6 +356,7 @@ public class XiaohongshuWebAdapter {
         if (messageStart >= 0) {
             messageStart += "message='".length();
             int messageEnd = value.indexOf("\n name=", messageStart);
+            if (messageEnd < 0) messageEnd = value.indexOf(" name=", messageStart);
             if (messageEnd < 0) messageEnd = value.indexOf("'\n", messageStart);
             if (messageEnd > messageStart) value = value.substring(messageStart, messageEnd);
         }
