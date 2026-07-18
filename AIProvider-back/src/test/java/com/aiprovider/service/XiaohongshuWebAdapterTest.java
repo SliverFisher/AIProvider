@@ -1,6 +1,8 @@
 package com.aiprovider.service;
 
 import static org.junit.jupiter.api.Assertions.*;
+import java.util.Arrays;
+import java.util.TreeSet;
 import org.junit.jupiter.api.Test;
 
 class XiaohongshuWebAdapterTest {
@@ -18,5 +20,12 @@ class XiaohongshuWebAdapterTest {
         assertEquals(2, XiaohongshuWebAdapter.qrCodeStatus("{\"data\":{\"codeStatus\":2,\"ticket\":\"secret\"}}"));
         assertEquals(1, XiaohongshuWebAdapter.qrCodeStatus("{\"codeStatus\":1}"));
         assertEquals(-1, XiaohongshuWebAdapter.qrCodeStatus("{\"result\":0}"));
+    }
+
+    @Test void diagnosticsKeepOnlySafeBusinessFieldsAndCookieNames() {
+        String body="{\"codeStatus\":2,\"result\":0,\"success\":true,\"ticket\":\"secret-ticket\"}";
+        String fields=XiaohongshuWebAdapter.safeResponseFields(body);
+        assertTrue(fields.contains("codeStatus=2"));assertTrue(fields.contains("result=0"));assertFalse(fields.contains("secret-ticket"));
+        assertEquals(new TreeSet<>(Arrays.asList("web_session","a1")),XiaohongshuWebAdapter.setCookieNames(Arrays.asList("web_session=secret; Path=/","a1=value; Secure")));
     }
 }
