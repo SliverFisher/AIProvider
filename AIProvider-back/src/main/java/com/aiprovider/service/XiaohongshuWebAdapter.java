@@ -13,14 +13,19 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.nio.file.Path;
+import java.nio.file.Files;
 import java.net.URI;
+import java.awt.image.BufferedImage;
+import javax.imageio.ImageIO;
 
 @Component
 public class XiaohongshuWebAdapter {
     private static final Logger log = LoggerFactory.getLogger(XiaohongshuWebAdapter.class);
     private static final Pattern QR_CODE_STATUS = Pattern.compile("\\\"codeStatus\\\"\\s*:\\s*([0-3])");
     private static final Pattern SAFE_RESPONSE_FIELD = Pattern.compile("\\\"(codeStatus|code|result|success)\\\"\\s*:\\s*(\\\"[^\\\"]{0,80}\\\"|-?\\d+|true|false|null)");
-    static final String IMAGE_UPLOAD_INPUT = "input[type='file'][accept*='image'],input[type='file'][accept*='.jpg'],input[type='file'][accept*='.jpeg'],input[type='file'][accept*='.png'],input[type='file'][accept*='.webp']";
+    private static final String CAPTURE_WEBPACK_REQUIRE = "() => new Promise((resolve, reject) => { try { let captured; self.webpackChunkugc.push([[\"aiprovider_\" + Date.now()], {}, require => { captured = require; }]); if (!captured) throw new Error(\"webpack runtime unavailable\"); window.__aiproviderWebpackRequire = captured; resolve(true); } catch (error) { reject(error); } })";
+    private static final String DIRECT_UPLOAD = "data => new Promise(async (resolve, reject) => { try { const api = window.__aiproviderWebpackRequire(407); if (!api || typeof api.ku !== 'function') throw new Error('official image uploader unavailable'); const uploaded = await api.ku(data.imageDataUrl); const fileId = uploaded && (uploaded.fileId || uploaded.Key || uploaded.key); if (!fileId) throw new Error('upload response missing fileId'); resolve({fileId, keys:Object.keys(uploaded).sort()}); } catch (error) { reject(error); } })";
+    private static final String DIRECT_POST_NOTE = "payload => new Promise(async (resolve, reject) => { try { const api = window.__aiproviderWebpackRequire(99519); if (!api || typeof api.E !== 'function') throw new Error('official note api unavailable'); const result = await api.E(payload); resolve({noteId:(result && (result.noteId || result.note_id || result.id)) || '', keys:result ? Object.keys(result).sort() : []}); } catch (error) { reject(error); } })";
     private final boolean headless;
     private final double timeoutMs;
     private final long loginSessionTtlMs;
@@ -111,65 +116,110 @@ public class XiaohongshuWebAdapter {
     }
 
     public String publish(String storageState, String title, String body, List<String> tags, Path card) {
-        String stage = "启动浏览器";
+        String stage = "加载小红书官方接口运行时";
         String pageLocation = "not-opened";
         try (Playwright playwright = Playwright.create(); Browser browser = launch(playwright); BrowserContext context = browser.newContext(new Browser.NewContextOptions().setStorageState(storageState).setViewportSize(1280, 720))) {
             context.setDefaultTimeout(timeoutMs);
             Page page = context.newPage();
-            stage = "打开发布页面";
             page.navigate("https://creator.xiaohongshu.com/publish/publish?source=official", new Page.NavigateOptions().setTimeout(timeoutMs));
-            page.waitForTimeout(1000);
             pageLocation = safeLocation(page.url());
             if (isLoginUrl(page.url())) throw new XiaohongshuAutomationException("小红书登录会话已过期，请重新扫码登录");
-            stage = "进入发布笔记";
-            if (page.locator(IMAGE_UPLOAD_INPUT).count() == 0 && clickIfVisible(page, "发布笔记")) page.waitForTimeout(1200);
-            stage = "切换到图文发布";
-            if (page.locator(IMAGE_UPLOAD_INPUT).count() == 0 && (clickPublishTab(page, "上传图文") || clickPublishTab(page, "发布图文"))) waitForImageInput(page);
-            stage = "查找图片上传控件";
-            Locator imageInputs = page.locator(IMAGE_UPLOAD_INPUT);
-            if (imageInputs.count() == 0) {
-                String diagnostic = publishPageDiagnostic(page);
-                log.error("XHS_PUBLISH image_input_missing page={} diagnostic={}", safeLocation(page.url()), diagnostic);
-                throw new XiaohongshuAutomationException("小红书图文发布页未生成图片上传控件；页面诊断：" + diagnostic);
-            }
-            Locator imageInput = imageInputs.first();
-            stage = "上传文字卡";
-            imageInput.setInputFiles(card);
-            waitForUpload(page);
-            stage = "填写标题";
-            Locator titleInput = page.locator("input[placeholder*='标题'],textarea[placeholder*='标题']").first();
-            titleInput.waitFor(new Locator.WaitForOptions().setTimeout(timeoutMs));
-            titleInput.fill(title);
-            stage = "填写正文";
-            Locator editor = page.locator("[contenteditable='true'],textarea[placeholder*='正文'],textarea[placeholder*='描述']").first();
-            editor.waitFor(new Locator.WaitForOptions().setTimeout(timeoutMs));
-            String content = body + formatTags(tags);
-            editor.fill(content);
-            stage = "查找发布按钮";
-            Locator publishCandidates = page.getByText("发布", new Page.GetByTextOptions().setExact(true));
-            if (publishCandidates.count() == 0) {
-                String diagnostic = publishPageDiagnostic(page);
-                log.error("XHS_PUBLISH submit_missing page={} diagnostic={}", safeLocation(page.url()), diagnostic);
-                throw new XiaohongshuAutomationException("小红书图文发布页未找到最终发布按钮；页面诊断：" + diagnostic);
-            }
-            Locator publish = publishCandidates.last();
-            stage = "点击发布按钮";
-            publish.click();
-            stage = "等待发布结果";
-            long deadline = System.currentTimeMillis() + (long) timeoutMs;
-            while (System.currentTimeMillis() < deadline) {
-                if (page.url().contains("success") || page.getByText("发布成功").count() > 0) return page.url();
-                page.waitForTimeout(300);
-            }
-            throw new XiaohongshuAutomationException("已点击发布，但小红书未返回明确成功结果；请人工确认该任务，系统不会自动重试", true);
+            page.waitForLoadState();
+            page.evaluate(CAPTURE_WEBPACK_REQUIRE);
+            BufferedImage image = ImageIO.read(card.toFile());
+            if (image == null) throw new XiaohongshuAutomationException("文字卡不是可识别的图片");
+            byte[] bytes = Files.readAllBytes(card);
+            Map<String,Object> uploadInput = new LinkedHashMap<>();
+            uploadInput.put("imageDataUrl", "data:image/png;base64," + Base64.getEncoder().encodeToString(bytes));
+            stage = "调用图片上传接口";
+            Object uploadRaw = page.evaluate(DIRECT_UPLOAD, uploadInput);
+            if (!(uploadRaw instanceof Map)) throw new XiaohongshuAutomationException("小红书图片上传接口返回格式异常");
+            Map<?,?> upload = (Map<?,?>) uploadRaw;
+            String fileId = valueText(upload.get("fileId"));
+            if (fileId == null) throw new XiaohongshuAutomationException("小红书图片上传接口未返回 fileId");
+            log.info("XHS_DIRECT_UPLOAD success page={} responseKeys={}", pageLocation, upload.get("keys"));
+            Map<String,Object> payload = buildNotePayload(title, body, tags, fileId, image.getWidth(), image.getHeight(), bytes.length);
+            stage = "调用笔记发布 POST 接口";
+            Object postRaw = page.evaluate(DIRECT_POST_NOTE, payload);
+            if (!(postRaw instanceof Map)) throw new XiaohongshuAutomationException("小红书笔记发布接口返回格式异常", true);
+            Map<?,?> post = (Map<?,?>) postRaw;
+            String noteId = valueText(post.get("noteId"));
+            log.info("XHS_DIRECT_POST success page={} noteIdPresent={} responseKeys={}", pageLocation, noteId != null, post.get("keys"));
+            return noteId == null ? "https://creator.xiaohongshu.com/publish/success" : "https://www.xiaohongshu.com/explore/" + noteId;
         } catch (XiaohongshuAutomationException e) {
             log.error("XHS_PUBLISH stopped stage={} page={} reason={}", stage, pageLocation, e.getMessage());
             throw e;
         } catch (PlaywrightException e) {
             String reason = safe(e);
             log.error("XHS_PUBLISH failed stage={} page={} reason={}", stage, pageLocation, reason, e);
-            throw new XiaohongshuAutomationException("小红书网页发布失败（" + stage + "）：" + reason, e);
+            boolean uncertain = "调用笔记发布 POST 接口".equals(stage);
+            throw uncertain
+                    ? new XiaohongshuAutomationException("小红书接口发布失败（" + stage + "）：" + reason, true)
+                    : new XiaohongshuAutomationException("小红书接口发布失败（" + stage + "）：" + reason, e);
+        } catch (java.io.IOException e) {
+            log.error("XHS_PUBLISH failed stage={} page={} reason={}", stage, pageLocation, e.getClass().getSimpleName(), e);
+            throw new XiaohongshuAutomationException("读取待发布文字卡失败", e);
         }
+    }
+
+    static Map<String,Object> buildNotePayload(String title, String body, List<String> tags, String fileId, int width, int height, long byteSize) {
+        Map<String,Object> common = new LinkedHashMap<>();
+        common.put("type", "normal");
+        common.put("noteId", "");
+        common.put("source", "\"official\"");
+        common.put("title", title);
+        common.put("desc", body + formatTags(tags));
+        common.put("ats", Collections.emptyList());
+        common.put("hashTag", Collections.emptyList());
+        Map<String,Object> businessBinds = mapOf(
+                "version", 1, "noteId", 0, "bizType", 0,
+                "noteOrderBind", Collections.emptyMap(),
+                "notePostTiming", Collections.emptyMap(),
+                "noteCollectionBind", Collections.emptyMap(),
+                "noteSketchCollectionBind", Collections.singletonMap("id", ""),
+                "optionRelationList", Collections.emptyList());
+        common.put("businessBinds", json(businessBinds));
+        common.put("postLoc", Collections.emptyMap());
+        Map<String,Object> privacy = new LinkedHashMap<>();
+        privacy.put("opType", 1);
+        privacy.put("type", 0);
+        privacy.put("userIds", Collections.emptyList());
+        common.put("privacyInfo", privacy);
+        common.put("bizRelations", Collections.emptyList());
+        Map<String,Object> trace = new LinkedHashMap<>();
+        trace.put("recommend_title", mapOf("recommend_title_id", "", "is_use", false, "used_index", -1));
+        trace.put("recommendTitle", Collections.emptyList());
+        trace.put("recommend_topics", Collections.singletonMap("used", Collections.emptyList()));
+        common.put("capaTraceInfo", Collections.singletonMap("contextJson", json(trace)));
+
+        Map<String,Object> image = new LinkedHashMap<>();
+        image.put("fileId", fileId);
+        image.put("width", width);
+        image.put("height", height);
+        image.put("metadata", Collections.singletonMap("source", -1));
+        image.put("stickers", mapOf("version", 2, "floating", Collections.emptyList()));
+        Map<String,Object> metadata = new LinkedHashMap<>();
+        metadata.put("mimeType", "image/png");
+        metadata.put("image_metadata", mapOf("bg_color", "", "origin_size", byteSize / 1024.0));
+        image.put("extraInfoJson", json(metadata));
+        return mapOf("common", common, "imageInfo", Collections.singletonMap("images", Collections.singletonList(image)), "videoInfo", null);
+    }
+
+    private static Map<String,Object> mapOf(Object... values) {
+        Map<String,Object> out = new LinkedHashMap<>();
+        for (int i = 0; i < values.length; i += 2) out.put(String.valueOf(values[i]), values[i + 1]);
+        return out;
+    }
+
+    private static String json(Object value) {
+        try { return new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(value); }
+        catch (Exception e) { throw new IllegalStateException("构造小红书发布数据失败", e); }
+    }
+
+    private static String valueText(Object value) {
+        if (value == null) return null;
+        String text = String.valueOf(value).trim();
+        return text.isEmpty() ? null : text;
     }
 
     private boolean authenticated(BrowserContext context) {
@@ -285,68 +335,7 @@ public class XiaohongshuWebAdapter {
         throw new XiaohongshuAutomationException("小红书登录页未生成可扫描二维码");
     }
 
-    private boolean clickIfVisible(Page page, String text) {
-        try {
-            Locator targets = page.getByText(text, new Page.GetByTextOptions().setExact(false));
-            for (int i = 0; i < targets.count(); i++) {
-                Locator target = targets.nth(i);
-                if (target.isVisible()) {
-                    target.click();
-                    page.waitForTimeout(500);
-                    return true;
-                }
-            }
-        } catch (PlaywrightException ignored) {
-        }
-        return false;
-    }
-
-    private boolean clickPublishTab(Page page, String text) {
-        try {
-            Locator labels = page.getByText(text, new Page.GetByTextOptions().setExact(true));
-            for (int i = 0; i < labels.count(); i++) {
-                Locator label = labels.nth(i);
-                if (!label.isVisible()) continue;
-                Object clicked = label.evaluate("el => { const target = el.closest('button,[role=tab],[class*=tab]'); if (!target) return false; target.click(); return true; }");
-                if (Boolean.TRUE.equals(clicked)) return true;
-            }
-        } catch (PlaywrightException ignored) {
-        }
-        return false;
-    }
-
-    private void waitForImageInput(Page page) {
-        long deadline = System.currentTimeMillis() + Math.min((long) timeoutMs, 8000L);
-        while (System.currentTimeMillis() < deadline) {
-            if (page.locator(IMAGE_UPLOAD_INPUT).count() > 0) return;
-            page.waitForTimeout(200);
-        }
-    }
-
-    private String publishPageDiagnostic(Page page) {
-        List<String> accepts = new ArrayList<>();
-        try {
-            Locator inputs = page.locator("input[type='file']");
-            for (int i = 0; i < inputs.count(); i++) accepts.add(String.valueOf(inputs.nth(i).getAttribute("accept")));
-            String body = page.locator("body").innerText().replaceAll("\\s+", " ").trim();
-            if (body.length() > 1600) body = body.substring(0, 1600);
-            return "url=" + safeLocation(page.url()) + ", fileAccepts=" + accepts + ", visibleText=" + body;
-        } catch (PlaywrightException e) {
-            return "url=" + safeLocation(page.url()) + ", diagnosticError=" + e.getClass().getSimpleName();
-        }
-    }
-
-    private void waitForUpload(Page page) {
-        long deadline = System.currentTimeMillis() + (long) timeoutMs;
-        while (System.currentTimeMillis() < deadline) {
-            boolean progress = page.locator("[role='progressbar'],[class*='upload'][class*='progress']").count() > 0;
-            if (!progress && page.locator("img").count() > 0) return;
-            page.waitForTimeout(300);
-        }
-        throw new XiaohongshuAutomationException("等待小红书文字卡上传完成超时");
-    }
-
-    private String formatTags(List<String> tags) {
+    private static String formatTags(List<String> tags) {
         if (tags == null || tags.isEmpty()) return "";
         StringBuilder out = new StringBuilder("\n\n");
         for (String tag : tags)

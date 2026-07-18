@@ -42,9 +42,14 @@ class XiaohongshuWebAdapterTest {
         assertEquals("Timeout 60000ms exceeded",XiaohongshuWebAdapter.concisePlaywrightError("Error { message='Timeout 60000ms exceeded name='TimeoutError stack='ignored }","PlaywrightException"));
     }
 
-    @Test void imageUploadSelectorCannotFallBackToTheVideoInput() {
-        assertTrue(XiaohongshuWebAdapter.IMAGE_UPLOAD_INPUT.contains(".png"));
-        assertFalse(XiaohongshuWebAdapter.IMAGE_UPLOAD_INPUT.contains(".mp4"));
-        assertFalse(XiaohongshuWebAdapter.IMAGE_UPLOAD_INPUT.endsWith("input[type='file']"));
+    @Test void directPublishPayloadContainsUploadedImageAndPublicPrivacy() {
+        java.util.Map<String,Object> payload=XiaohongshuWebAdapter.buildNotePayload("标题","正文",java.util.Collections.singletonList("AI"),"file-1",1080,1440,2048);
+        java.util.Map<?,?> common=(java.util.Map<?,?>)payload.get("common");
+        assertEquals("正文\n\n#AI ",common.get("desc"));
+        assertEquals(0,((java.util.Map<?,?>)common.get("privacyInfo")).get("type"));
+        java.util.Map<?,?> imageInfo=(java.util.Map<?,?>)payload.get("imageInfo");
+        java.util.Map<?,?> image=(java.util.Map<?,?>)((java.util.List<?>)imageInfo.get("images")).get(0);
+        assertEquals("file-1",image.get("fileId"));
+        assertEquals(1080,image.get("width"));
     }
 }
