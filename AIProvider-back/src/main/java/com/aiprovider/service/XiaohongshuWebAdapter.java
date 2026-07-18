@@ -124,7 +124,7 @@ public class XiaohongshuWebAdapter {
             stage = "进入发布笔记";
             if (page.locator(IMAGE_UPLOAD_INPUT).count() == 0 && clickIfVisible(page, "发布笔记")) page.waitForTimeout(1200);
             stage = "切换到图文发布";
-            if (page.locator(IMAGE_UPLOAD_INPUT).count() == 0 && (clickIfVisible(page, "上传图文") || clickIfVisible(page, "发布图文"))) page.waitForTimeout(800);
+            if (page.locator(IMAGE_UPLOAD_INPUT).count() == 0 && (clickPublishTab(page, "上传图文") || clickPublishTab(page, "发布图文"))) waitForImageInput(page);
             stage = "查找图片上传控件";
             Locator imageInputs = page.locator(IMAGE_UPLOAD_INPUT);
             if (imageInputs.count() == 0) {
@@ -294,6 +294,28 @@ public class XiaohongshuWebAdapter {
         } catch (PlaywrightException ignored) {
         }
         return false;
+    }
+
+    private boolean clickPublishTab(Page page, String text) {
+        try {
+            Locator labels = page.getByText(text, new Page.GetByTextOptions().setExact(true));
+            for (int i = 0; i < labels.count(); i++) {
+                Locator label = labels.nth(i);
+                if (!label.isVisible()) continue;
+                Object clicked = label.evaluate("el => { const target = el.closest('button,[role=tab],[class*=tab]'); if (!target) return false; target.click(); return true; }");
+                if (Boolean.TRUE.equals(clicked)) return true;
+            }
+        } catch (PlaywrightException ignored) {
+        }
+        return false;
+    }
+
+    private void waitForImageInput(Page page) {
+        long deadline = System.currentTimeMillis() + Math.min((long) timeoutMs, 8000L);
+        while (System.currentTimeMillis() < deadline) {
+            if (page.locator(IMAGE_UPLOAD_INPUT).count() > 0) return;
+            page.waitForTimeout(200);
+        }
     }
 
     private String publishPageDiagnostic(Page page) {
