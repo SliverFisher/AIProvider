@@ -32,4 +32,6 @@ public class RemoteCodexRepository {
         "UPDATE c_RemoteCodexConversations SET CodexThreadId=COALESCE(?,CodexThreadId),Status='READY',ErrorMessage=NULL,UpdatedAt=? WHERE Id=?",threadId,Timestamp.valueOf(now),id);}
     public void failed(String id,String error,LocalDateTime now){jdbc.update(
         "UPDATE c_RemoteCodexConversations SET Status='ERROR',ErrorMessage=?,UpdatedAt=? WHERE Id=?",error,Timestamp.valueOf(now),id);}
+    public int recoverInterrupted(LocalDateTime now){return jdbc.update(
+        "UPDATE c_RemoteCodexConversations SET Status='ERROR',ErrorMessage='服务重启中断了上一次执行，请重新发送任务',UpdatedAt=? WHERE Status='RUNNING'",Timestamp.valueOf(now));}
 }

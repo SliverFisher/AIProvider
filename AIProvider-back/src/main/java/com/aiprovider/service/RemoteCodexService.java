@@ -10,6 +10,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import javax.annotation.PreDestroy;
+import javax.annotation.PostConstruct;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
@@ -49,6 +50,8 @@ public class RemoteCodexService {
         @Value("${remote-codex.access-token:}") String accessToken) {
         this.repository=repository;this.json=json;this.command=command;this.workingDirectory=workingDirectory;this.accessToken=accessToken;
     }
+
+    @PostConstruct public void recoverInterruptedTurns(){repository.recoverInterrupted(LocalDateTime.now());}
 
     public void authorize(String supplied) {
         if(accessToken==null||accessToken.length()<16)throw new RemoteCodexException("远程 Codex 访问密钥尚未配置");
