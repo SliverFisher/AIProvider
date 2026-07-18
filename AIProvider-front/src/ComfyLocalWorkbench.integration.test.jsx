@@ -85,6 +85,7 @@ describe("Comfy image generation flow", () => {
   let existingHistoryAlreadyPresent;
   let recentHistoryPoll;
   let bridgeRequests;
+  let registeredAssetStatus;
 
   beforeEach(() => {
     submitted = false;
@@ -113,6 +114,7 @@ describe("Comfy image generation flow", () => {
     existingHistoryAlreadyPresent = false;
     recentHistoryPoll = 0;
     bridgeRequests = [];
+    registeredAssetStatus = null;
     vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} });
     vi.stubGlobal("confirm", vi.fn(() => true));
     vi.stubGlobal("ClipboardItem", class { constructor(items) { this.items = items; } });
@@ -147,6 +149,14 @@ describe("Comfy image generation flow", () => {
         deletedPaths.push(...JSON.parse(options.body).paths);
         return json({ success: true, deleted: deletedPaths.length });
       }
+      if (url.endsWith("/api/gallery/trash") && options.method === "POST") {
+        deletedPaths.push(...JSON.parse(options.body).paths);
+        return json({ success: true, trashed: deletedPaths.length });
+      }
+      if (url.includes("/api/gallery/trash?")) return json({ success: true, total: 0, items: [] });
+      if (url.endsWith("/api/gallery/restore") && options.method === "POST") return json({ success: true, restored: 1 });
+      if (["/api/assets/trash", "/api/assets/restore", "/api/assets/delete"].some((path) => url.endsWith(path)) && options.method === "POST") return json({ code: 200, data: { updated: 1 } });
+      if (url.endsWith("/api/assets/status") && options.method === "PUT") return json({ code: 200, data: { updated: 1 } });
       if (url.endsWith("/comfy/queue")) {
         if (customQueue) return json(customQueue);
         if (externalRun && externalQueuePoll++ === 0) return json({ queue_running: [[0, "external-prompt", workflow.definition, {}, ["7"]]], queue_pending: [] });
@@ -168,6 +178,7 @@ describe("Comfy image generation flow", () => {
       }
       if (url.endsWith("/api/assets/batch") && options.method === "POST") {
         const item = JSON.parse(options.body).items[0];
+        registeredAssetStatus = item.status;
         return json({ code: 200, data: { saved: 1, items: [{ id: 13, platform: "Windows", ...item }] } });
       }
       if (url.includes("/api/gallery?")) {
@@ -599,6 +610,7 @@ describe("Comfy image generation flow", () => {
     fireEvent.click(screen.getByRole("button", { name: "删除" }));
 
     await waitFor(() => expect(deletedPaths).toEqual(["aimaid/done.png"]));
+    expect(screen.queryByText("确认删除")).toBeNull();
     expect(screen.getByText("done-2.png")).toBeTruthy();
     expect(screen.getByText("1 / 1")).toBeTruthy();
     expect(galleryRequests).toBe(1);
@@ -645,6 +657,36 @@ describe("Comfy image generation flow", () => {
 
     fireEvent.keyDown(window, { key: "Delete" });
     await waitFor(() => expect(deletedPaths).toEqual(["aimaid/done.png"]));
+  });
+
+  it("uses End to send the current local image to pending without a dialog", async () => {
+    multiImageGallery = true;
+    render(<ComfyLocalWorkbench />);
+    const [image] = await screen.findAllByAltText("历史生成结果");
+    fireEvent.click(image.closest("button"));
+    fireEvent.keyDown(window, { key: "End" });
+    await waitFor(() => expect(registeredAssetStatus).toBe("PENDING"));
+    expect(screen.queryByText("确认删除")).toBeNull();
+  });
+
+  it("uses PageDown to send the current local image directly to assets", async () => {
+    multiImageGallery = true;
+    render(<ComfyLocalWorkbench />);
+    const [image] = await screen.findAllByAltText("历史生成结果");
+    fireEvent.click(image.closest("button"));
+    fireEvent.keyDown(window, { key: "PageDown" });
+    await waitFor(() => expect(registeredAssetStatus).toBe("ACTIVE"));
+  });
+
+  it("shows a unified recycle bin and confirms only permanent deletion there", async () => {
+    render(<ComfyLocalWorkbench />);
+    fireEvent.click(await screen.findByRole("button", { name: "回收站" }));
+    const image = await screen.findByAltText("历史生成结果");
+    fireEvent.contextMenu(image.closest("button"));
+    fireEvent.click(screen.getByRole("button", { name: "永久删除" }));
+    expect(screen.getByText("永久删除当前图片？此操作不可恢复。")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "确认删除" }));
+    await waitFor(() => expect(screen.queryByAltText("历史生成结果")).toBeNull());
   });
 
   it("shows node details to the right of the local and asset tabs", async () => {

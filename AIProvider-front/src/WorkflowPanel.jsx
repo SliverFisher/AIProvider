@@ -27,8 +27,8 @@ const SELECT_OPTIONS = {
   scheduler: [["normal", "标准"], ["karras", "Karras"], ["exponential", "指数"], ["sgm_uniform", "SGM 均匀"]],
 };
 
-const BASIC_FIELDS = new Set(["sourceImage", "cutoutTarget", "positivePrompt", "negativePrompt", "loras", "width", "height", "batchSize", "seed"]);
-const BASIC_FIELD_ORDER = ["sourceImage", "cutoutTarget", "positivePrompt", "negativePrompt", "loras", "width", "height", "batchSize", "seed"];
+const BASIC_FIELDS = new Set(["sourceImage", "cutoutTarget", "positivePrompt", "negativePrompt", "loras", "width", "height", "checkpoint", "batchSize", "seed"]);
+const BASIC_FIELD_ORDER = ["sourceImage", "cutoutTarget", "positivePrompt", "negativePrompt", "loras", "width", "height", "checkpoint", "batchSize", "seed"];
 const SIZE_OPTIONS = [
   ["1920x1080", "横屏 · 1K（1920 × 1080）"], ["3840x2160", "横屏 · 2K（3840 × 2160）"], ["7680x4320", "横屏 · 4K（7680 × 4320）"],
   ["1080x1920", "竖屏 · 1K（1080 × 1920）"], ["2160x3840", "竖屏 · 2K（2160 × 3840）"], ["4320x7680", "竖屏 · 4K（4320 × 7680）"],
@@ -50,6 +50,17 @@ function SelectField({ fieldKey, value, onChange }) {
   const options = SELECT_OPTIONS[fieldKey];
   const known = options.some(([key]) => key === value);
   return <label>{LABELS[fieldKey]}<select aria-label={LABELS[fieldKey]} value={value ?? ""} onChange={(event) => onChange(fieldKey, event.target.value)}>{!known && value && <option value={value}>{value}</option>}{options.map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></label>;
+}
+
+function MainModelField({ fieldSpec, value, workflow, models, loading, onChange }) {
+  const current = value || workflow.models?.[0] || "";
+  const options = (models || []).map((model) => typeof model === "string" ? { name: model, displayName: model } : model).filter((model) => model?.name);
+  if (current && !options.some((model) => model.name === current)) options.unshift({ name: current, displayName: current });
+  const modelKind = fieldSpec?.input === "unet_name" ? "扩散模型" : "Checkpoint";
+  return <label className="workflow-panel__inline-field">{LABELS.checkpoint}<select aria-label={LABELS.checkpoint} value={current} disabled={loading || !options.length} title={`当前工作流使用 ${modelKind} 加载器`} onChange={(event) => onChange("checkpoint", event.target.value)}>
+    {!options.length && <option value="">{loading ? "正在读取主模型…" : `未检测到可用 ${modelKind}`}</option>}
+    {options.map((model) => <option key={model.name} value={model.name} title={model.name}>{model.displayName || model.name}</option>)}
+  </select></label>;
 }
 
 function SizeField({ width, height, onChange }) {
@@ -128,7 +139,7 @@ function LoraField({ value, models, loading, onChange }) {
   </section>;
 }
 
-function WorkflowField({ fieldKey, fieldSpec, value, workflow, referenceFile, onReference, onReferenceDrop, onChange }) {
+function WorkflowField({ fieldKey, fieldSpec, value, referenceFile, onReference, onReferenceDrop, onChange }) {
   const [draggingFile, setDraggingFile] = useState(false);
   const [referenceUrl, setReferenceUrl] = useState("");
   useEffect(() => {
@@ -147,14 +158,13 @@ function WorkflowField({ fieldKey, fieldSpec, value, workflow, referenceFile, on
   >待处理原图<input aria-label="待处理原图" type="file" accept="image/*" onChange={(event) => onReference("sourceImage", event)} /><span className={referenceUrl ? "has-image" : ""}>{referenceUrl ? <img src={referenceUrl} alt={referenceFile?.name || "待处理原图"} /> : <UploadSimple />}<em>{referenceFile?.name || "拖入本机图片，或点击选择"}</em></span></label>;
   if (fieldKey === "cutoutTarget" && fieldSpec?.nodeType === "CutoutTarget") return <CutoutTargetField value={value} onChange={onChange} />;
   if (["positivePrompt", "negativePrompt", "loras"].includes(fieldKey)) return <label className={fieldKey === "positivePrompt" || fieldKey === "negativePrompt" ? "workflow-panel__prompt-field" : undefined}>{fieldKey === "loras" && LABELS[fieldKey]}<textarea aria-label={LABELS[fieldKey]} rows={fieldKey === "positivePrompt" ? 9 : fieldKey === "negativePrompt" ? 7 : 3} value={value ?? ""} onChange={(event) => onChange(fieldKey, event.target.value)} /></label>;
-  if (fieldKey === "checkpoint" && workflow.models?.length) return <label>{LABELS.checkpoint}<select aria-label={LABELS.checkpoint} value={value || workflow.models[0]} onChange={(event) => onChange(fieldKey, event.target.value)}>{workflow.models.map((model) => <option key={model} value={model}>{model}</option>)}</select></label>;
   if (SELECT_OPTIONS[fieldKey]) return <SelectField fieldKey={fieldKey} value={value} onChange={onChange} />;
   if (typeof value === "number" || ["width", "height", "batchSize", "seed", "steps", "cfg", "denoise", "secondPassSteps", "secondPassDenoise", "secondPassSeed"].includes(fieldKey)) return <NumberField fieldKey={fieldKey} fieldSpec={fieldSpec} value={value} onChange={onChange} />;
   if (typeof value === "boolean") return <label className="workflow-panel__check"><input type="checkbox" checked={value} onChange={(event) => onChange(fieldKey, event.target.checked)} /><span>{label}</span></label>;
   return <label>{label}<input aria-label={label} value={value ?? ""} onChange={(event) => onChange(fieldKey, event.target.value)} /></label>;
 }
 
-export default function WorkflowPanel({ workflows, loading, workflow, fieldKeys, fieldSpecs, values, onWorkflowChange, onFieldChange, referenceFiles, onReference, onReferenceDrop, loraModels, loraModelsLoading, promptOptions = [], onPromptOptionsReload, presets, presetQuery, onPresetChange, presetSaveName, onPresetSaveNameChange, onSavePreset, onReloadPreset, onEditPreset, presetSaving, presetReloading, onLuckyGenerate, luckyLoading, onBatchGenerate, onGenerate, disabled }) {
+export default function WorkflowPanel({ workflows, loading, workflow, fieldKeys, fieldSpecs, values, onWorkflowChange, onFieldChange, referenceFiles, onReference, onReferenceDrop, loraModels, loraModelsLoading, mainModels, mainModelsLoading, promptOptions = [], onPromptOptionsReload, presets, presetQuery, onPresetChange, presetSaveName, onPresetSaveNameChange, onSavePreset, onReloadPreset, onEditPreset, presetSaving, presetReloading, onLuckyGenerate, luckyLoading, onBatchGenerate, onGenerate, disabled }) {
   const [promptEditing, setPromptEditing] = useState({ positivePrompt: false, negativePrompt: false });
   const [promptTermQuery, setPromptTermQuery] = useState("");
   const [negativeTermQuery, setNegativeTermQuery] = useState("");
@@ -208,7 +218,8 @@ export default function WorkflowPanel({ workflows, loading, workflow, fieldKeys,
     if (hasCombinedSize && fieldKey === "height") return null;
     if (fieldKey === "seed") return <SeedField key="seed" value={values.seed} random={values.randomSeed !== false} onChange={onFieldChange} />;
     if (fieldKey === "loras") return <LoraField key="loras" value={values.loras} models={loraModels || []} loading={loraModelsLoading} onChange={onFieldChange} />;
-    return <WorkflowField key={fieldKey} fieldKey={fieldKey} fieldSpec={fieldSpecs[fieldKey]} value={values[fieldKey]} workflow={workflow} referenceFile={referenceFiles[fieldKey]} onReference={onReference} onReferenceDrop={onReferenceDrop} onChange={onFieldChange} />;
+    if (fieldKey === "checkpoint") return <MainModelField key="checkpoint" fieldSpec={fieldSpecs.checkpoint} value={values.checkpoint} workflow={workflow} models={mainModels || []} loading={mainModelsLoading} onChange={onFieldChange} />;
+    return <WorkflowField key={fieldKey} fieldKey={fieldKey} fieldSpec={fieldSpecs[fieldKey]} value={values[fieldKey]} referenceFile={referenceFiles[fieldKey]} onReference={onReference} onReferenceDrop={onReferenceDrop} onChange={onFieldChange} />;
   };
   const renderPromptField = (fieldKey) => {
     const source = String(values[fieldKey] || "");

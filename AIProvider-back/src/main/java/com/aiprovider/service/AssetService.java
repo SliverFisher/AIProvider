@@ -15,7 +15,8 @@ import java.util.*;
 @Service
 public class AssetService {
     private static final Set<String> ASSET_TYPES = new HashSet<>(Arrays.asList("image", "video", "audio", "document", "other"));
-    private static final Set<String> VALID_STATUSES = new HashSet<>(Arrays.asList("ACTIVE", "PENDING"));
+    private static final Set<String> WRITABLE_STATUSES = new HashSet<>(Arrays.asList("ACTIVE", "PENDING"));
+    private static final Set<String> PAGE_STATUSES = new HashSet<>(Arrays.asList("ACTIVE", "PENDING", "TRASHED"));
     private final AssetRepository repository;
     public AssetService(AssetRepository repository) { this.repository = repository; }
 
@@ -46,7 +47,7 @@ public class AssetService {
             if (!ASSET_TYPES.contains(assetType)) throw new IllegalArgumentException("assetType 仅支持 image、video、audio、document 或 other");
             item.setAssetType(assetType);
             String status = clean(item.getStatus(), 16);
-            if (status != null && !VALID_STATUSES.contains(status.toUpperCase(Locale.ROOT)))
+            if (status != null && !WRITABLE_STATUSES.contains(status.toUpperCase(Locale.ROOT)))
                 throw new IllegalArgumentException("status 仅支持 ACTIVE 或 PENDING");
             item.setStatus(status == null ? "ACTIVE" : status.toUpperCase(Locale.ROOT));
             if (item.getGenerationDurationMs() != null) item.setGenerationDurationMs(Math.max(0, item.getGenerationDurationMs()));
@@ -65,8 +66,8 @@ public class AssetService {
         if (page < 1) throw new IllegalArgumentException("page 必须大于等于 1");
         if (pageSize < 1 || pageSize > 100) throw new IllegalArgumentException("pageSize 必须在 1 到 100 之间");
         String normalizedStatus = status == null || status.trim().isEmpty() ? null : status.trim().toUpperCase(Locale.ROOT);
-        if (normalizedStatus != null && !VALID_STATUSES.contains(normalizedStatus))
-            throw new IllegalArgumentException("status 仅支持 ACTIVE 或 PENDING");
+        if (normalizedStatus != null && !PAGE_STATUSES.contains(normalizedStatus))
+            throw new IllegalArgumentException("status 仅支持 ACTIVE、PENDING 或 TRASHED");
         List<AssetVO> items = new ArrayList<>();
         for (Map<String,Object> row : repository.findPage(normalizedPlatform, normalizedStatus, pageSize, (page - 1) * pageSize)) items.add(toVO(row));
         return new AssetPageVO(items, repository.count(normalizedPlatform, normalizedStatus), page, pageSize);
@@ -81,25 +82,37 @@ public class AssetService {
 
     @Transactional
     public int delete(AssetDeleteDTO dto) {
-        String platform = platform(dto == null ? null : dto.getPlatform());
-        List<Long> ids = dto == null || dto.getIds() == null ? Collections.emptyList() : dto.getIds();
-        List<Long> valid = new ArrayList<>(new LinkedHashSet<>(ids));
-        valid.removeIf(id -> id == null || id <= 0);
-        if (valid.isEmpty() || valid.size() > 500) throw new IllegalArgumentException("资产 ID 数量必须在 1 到 500 之间");
-        return repository.deleteByIds(platform, valid);
+        return repository.deleteByIds(platform(dto == null ? null : dto.getPlatform()), validIds(dto));
+    }
+
+    @Transactional
+    public int trash(AssetDeleteDTO dto) {
+        return repository.trashByIds(platform(dto == null ? null : dto.getPlatform()), validIds(dto));
+    }
+
+    @Transactional
+    public int restore(AssetDeleteDTO dto) {
+        return repository.restoreByIds(platform(dto == null ? null : dto.getPlatform()), validIds(dto));
     }
 
     @Transactional
     public int updateStatus(AssetStatusDTO dto) {
         String platform = platform(dto == null ? null : dto.getPlatform());
-        List<Long> ids = dto == null || dto.getIds() == null ? Collections.emptyList() : dto.getIds();
-        List<Long> valid = new ArrayList<>(new LinkedHashSet<>(ids));
-        valid.removeIf(id -> id == null || id <= 0);
-        if (valid.isEmpty() || valid.size() > 500) throw new IllegalArgumentException("资产 ID 数量必须在 1 到 500 之间");
+        List<Long> valid = validIds(dto == null ? null : dto.getIds());
         String status = dto == null || dto.getStatus() == null ? null : dto.getStatus().trim().toUpperCase(Locale.ROOT);
-        if (status == null || !VALID_STATUSES.contains(status))
+        if (status == null || !WRITABLE_STATUSES.contains(status))
             throw new IllegalArgumentException("status 仅支持 ACTIVE 或 PENDING");
         return repository.updateStatus(platform, valid, status);
+    }
+
+    private static List<Long> validIds(AssetDeleteDTO dto) {
+        return validIds(dto == null ? null : dto.getIds());
+    }
+    private static List<Long> validIds(List<Long> ids) {
+        List<Long> valid = new ArrayList<>(new LinkedHashSet<>(ids == null ? Collections.emptyList() : ids));
+        valid.removeIf(id -> id == null || id <= 0);
+        if (valid.isEmpty() || valid.size() > 500) throw new IllegalArgumentException("资产 ID 数量必须在 1 到 500 之间");
+        return valid;
     }
 
     private static void validate(AssetItemDTO item) {
@@ -152,7 +165,7 @@ public class AssetService {
     }
     private static AssetVO toVO(Map<String,Object> row) {
         return new AssetVO(number(row.get("id")), text(row.get("platform")), text(row.get("localPath")), text(row.get("localUrl")), text(row.get("fileName")), number(row.get("fileSize")),
-                integer(row.get("width")), integer(row.get("height")), text(row.get("assetType")), text(row.get("mimeType")), text(row.get("status")), text(row.get("prompt")), text(row.get("negativePrompt")), text(row.get("lorasJson")), nullableLong(row.get("seed")), integer(row.get("steps")),
+                integer(row.get("width")), integer(row.get("height")), text(row.get("assetType")), text(row.get("mimeType")), text(row.get("status")), text(row.get("trashOriginalStatus")), text(row.get("prompt")), text(row.get("negativePrompt")), text(row.get("lorasJson")), nullableLong(row.get("seed")), integer(row.get("steps")),
                 decimal(row.get("cfg")), text(row.get("sampler")), text(row.get("scheduler")), text(row.get("workflowId")), date(row.get("generatedAt")),
                 date(row.get("generationCompletedAt")), nullableLong(row.get("generationDurationMs")), date(row.get("createdAt")));
     }

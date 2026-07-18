@@ -64,3 +64,25 @@ describe("ComfyUIAgent local inpaint workflow discovery", () => {
     expect(workflow).toContain('"class_type": "SaveImage"');
   });
 });
+
+describe("ComfyUIAgent main model discovery", () => {
+  it("binds both checkpoint and diffusion-model workflow loaders and reads their exact ComfyUI choices", () => {
+    const source = readFileSync(sourcePath, "utf8");
+    expect(source).toContain('app.MapGet("/api/main-models"');
+    expect(source).toContain('root[nodeType]?["input"]');
+    expect(source).toContain('type.Contains("UNET"');
+    expect(source).toContain('node["inputs"]?["unet_name"]');
+    expect(source).toContain('Bind("checkpoint", primaryModel, checkpoint != null ? "ckpt_name" : "unet_name", "主模型")');
+  });
+});
+
+describe("ComfyUIAgent local recycle bin", () => {
+  it("keeps local files until a permanent delete is requested from the persisted trash index", () => {
+    const source = readFileSync(sourcePath, "utf8");
+    expect(source).toContain('app.MapPost("/api/gallery/trash"');
+    expect(source).toContain('app.MapPost("/api/gallery/restore"');
+    expect(source).toContain('string GalleryTrashIndexPath()');
+    expect(source).toContain('只有回收站中的本机图片可以永久删除');
+    expect(source).toContain('trashedPaths.Contains(file.Path) == trashedOnly');
+  });
+});

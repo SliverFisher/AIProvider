@@ -17,5 +17,7 @@ public class AssetRepository {
     public List<Map<String,Object>> findImagePromptPool(String platform) { return mapper.findImagePromptPool(platform); }
     public Map<String,Object> findById(long id) { return mapper.findById(id); }
     public int deleteByIds(String platform, List<Long> ids) { return mapper.deleteByIds(platform, ids); }
+    public int trashByIds(String platform, List<Long> ids) { return mapper.trashByIds(platform, ids); }
+    public int restoreByIds(String platform, List<Long> ids) { return mapper.restoreByIds(platform, ids); }
     public int updateStatus(String platform, List<Long> ids, String status) { return mapper.updateStatus(platform, ids, status); }
 }

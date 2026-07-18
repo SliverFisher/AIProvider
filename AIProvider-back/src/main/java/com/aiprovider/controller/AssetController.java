@@ -32,6 +32,12 @@ public class AssetController {
     @PostMapping("/delete") public Result<Map<String,Integer>> delete(@RequestBody AssetDeleteDTO dto) {
         return Result.success(Collections.singletonMap("deleted", service.delete(dto)));
     }
+    @PostMapping("/trash") public Result<Map<String,Integer>> trash(@RequestBody AssetDeleteDTO dto) {
+        return Result.success(Collections.singletonMap("trashed", service.trash(dto)));
+    }
+    @PostMapping("/restore") public Result<Map<String,Integer>> restore(@RequestBody AssetDeleteDTO dto) {
+        return Result.success(Collections.singletonMap("restored", service.restore(dto)));
+    }
     @PutMapping("/status") public Result<Map<String,Integer>> updateStatus(@RequestBody AssetStatusDTO dto) {
         return Result.success(Collections.singletonMap("updated", service.updateStatus(dto)));
     }

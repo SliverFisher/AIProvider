@@ -102,6 +102,24 @@ describe("WorkflowPanel generation action", () => {
     expect(screen.queryByText("最终输出尺寸", { exact: true })).toBeNull();
   });
 
+  it("places the real workflow main-model selector between size and generation count", () => {
+    const change = vi.fn();
+    render(<WorkflowPanel workflows={[{ id: "wf", name: "扩散模型工作流" }]} workflow={{ id: "wf", name: "扩散模型工作流", models: ["flux/default.safetensors"], capabilities: {} }}
+      fieldKeys={["batchSize", "checkpoint", "height", "width"]} fieldSpecs={{ width: {}, height: {}, batchSize: {}, checkpoint: { nodeType: "UNETLoader", input: "unet_name" } }}
+      values={{ width: 1920, height: 1080, batchSize: 1, checkpoint: "flux/default.safetensors" }} mainModels={[{ name: "flux/default.safetensors", displayName: "default · flux" }, { name: "flux/dev.safetensors", displayName: "dev · flux" }]}
+      referenceFiles={{}} presets={[]} presetQuery="" disabled={{ blocked: false, busy: false }} loading={false}
+      onWorkflowChange={vi.fn()} onFieldChange={change} onReference={vi.fn()} onPresetChange={vi.fn()} onGenerate={vi.fn()} />);
+    const size = screen.getByRole("combobox", { name: "最终输出尺寸" }).closest(".workflow-panel__size");
+    const model = screen.getByRole("combobox", { name: "主模型" });
+    const count = screen.getByRole("spinbutton", { name: "生成数量" });
+    expect(size.compareDocumentPosition(model) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(model.compareDocumentPosition(count) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(model.title).toContain("扩散模型");
+    expect(model.closest("details")).toBeNull();
+    fireEvent.change(model, { target: { value: "flux/dev.safetensors" } });
+    expect(change).toHaveBeenCalledWith("checkpoint", "flux/dev.safetensors");
+  });
+
   it("switches every prompt term between English and Chinese without changing positions", () => {
     render(<WorkflowPanel workflows={[{ id: "wf", name: "测试工作流" }]} workflow={{ id: "wf", name: "测试工作流", capabilities: {} }}
       fieldKeys={["positivePrompt", "negativePrompt"]} fieldSpecs={{ positivePrompt: {}, negativePrompt: {} }}

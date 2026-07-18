@@ -79,6 +79,7 @@ app.Use(async (context, next) => {
                         context.Request.Path.StartsWithSegments("/api/folders") ||
                         context.Request.Path.StartsWithSegments("/api/generate") ||
                         context.Request.Path.StartsWithSegments("/api/lora-models") ||
+                        context.Request.Path.StartsWithSegments("/api/main-models") ||
                         context.Request.Path.StartsWithSegments("/api/local-workflows") ||
                         context.Request.Path.StartsWithSegments("/api/logs") ||
                         context.Request.Path.StartsWithSegments("/api/twitter") ||
@@ -132,6 +133,37 @@ app.MapGet("/api/lora-models", async (IHttpClientFactory factory) => {
     var models = names.OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
         .Select(name => new { name, displayName = CompactLoraDisplayName(name) });
     return Results.Ok(new { success = true, models });
+});
+app.MapGet("/api/main-models", async (string nodeType, string input, IHttpClientFactory factory) => {
+    if (string.IsNullOrWhiteSpace(nodeType) || string.IsNullOrWhiteSpace(input))
+        return Results.BadRequest(new { success = false, message = "缺少主模型加载节点类型或输入名称" });
+    using var response = await factory.CreateClient("comfy").GetAsync("object_info");
+    var text = await response.Content.ReadAsStringAsync();
+    if (!response.IsSuccessStatusCode) return Results.Problem($"读取 ComfyUI 主模型失败（HTTP {(int)response.StatusCode}）", statusCode: 502);
+    var root = JsonNode.Parse(text) as JsonObject ?? throw new InvalidOperationException("ComfyUI object_info 返回无效 JSON");
+    if (root[nodeType]?["input"] is not JsonObject nodeInputs)
+        return Results.Problem($"ComfyUI 未注册主模型加载节点 {nodeType}", statusCode: 422);
+    JsonArray? choices = null;
+    foreach (var groupName in new[] { "required", "optional" }) {
+        if (nodeInputs[groupName]?[input] is JsonArray spec && spec.Count > 0 && spec[0] is JsonArray inputChoices) {
+            choices = inputChoices;
+            break;
+        }
+    }
+    if (choices == null)
+        return Results.Problem($"节点 {nodeType} 的 {input} 不是可选择的模型输入", statusCode: 422);
+    var models = choices.OfType<JsonValue>()
+        .Select(value => value.TryGetValue<string>(out var name) ? name : null)
+        .Where(name => !string.IsNullOrWhiteSpace(name))
+        .Select(name => name!)
+        .Distinct(StringComparer.OrdinalIgnoreCase)
+        .OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
+        .Select(name => new { name, displayName = CompactModelDisplayName(name) });
+    return Results.Ok(new {
+        success = true,
+        kind = input.Equals("ckpt_name", StringComparison.OrdinalIgnoreCase) ? "checkpoint" : "diffusion",
+        models
+    });
 });
 app.MapPost("/api/comfy/start", async (IHttpClientFactory factory) => {
     if (!settings.IsPlatformConfigured)
@@ -579,6 +611,10 @@ app.MapGet("/api/gallery", async (int? maxItems, int? page, int? pageSize) => {
     var legacyItems = await ScanGallery(Math.Clamp(maxItems ?? 300, 1, 1000));
     return Results.Ok(new { success = true, items = legacyItems });
 });
+app.MapGet("/api/gallery/trash", async (int? maxItems) => {
+    var items = await ScanGallery(Math.Clamp(maxItems ?? 5000, 1, 5000), trashedOnly: true);
+    return Results.Ok(new { success = true, total = items.Sum(item => item.Images.Count), items });
+});
 
 app.MapGet("/api/gallery/file", (string path) => {
     var file = ResolveGalleryPath(path, mustExist: true);
@@ -662,15 +698,34 @@ app.MapPost("/api/migration/folders", async (FolderRequest request) => {
     return Results.Ok(new { success = true, directory });
 }).DisableAntiforgery();
 
+app.MapPost("/api/gallery/trash", async (GalleryPathsRequest request) => {
+    var paths = request.Paths.Select(NormalizeRelativePath).Where(path => path.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+    if (paths.Length == 0) return Results.BadRequest(new { success = false, message = "请选择要移入回收站的图片" });
+    await SetGalleryTrash(paths, trashed: true, requireExisting: true);
+    return Results.Ok(new { success = true, trashed = paths.Length });
+}).DisableAntiforgery();
+
+app.MapPost("/api/gallery/restore", async (GalleryPathsRequest request) => {
+    var paths = request.Paths.Select(NormalizeRelativePath).Where(path => path.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+    if (paths.Length == 0) return Results.BadRequest(new { success = false, message = "请选择要恢复的图片" });
+    await SetGalleryTrash(paths, trashed: false, requireExisting: true);
+    return Results.Ok(new { success = true, restored = paths.Length });
+}).DisableAntiforgery();
+
 app.MapPost("/api/gallery/delete", async (GalleryPathsRequest request) => {
     var paths = request.Paths.Select(NormalizeRelativePath).Where(path => path.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
     if (paths.Length == 0) return Results.BadRequest(new { success = false, message = "请选择要删除的图片" });
+    var trash = await ReadGalleryTrashIndex();
+    var trashedPaths = trash.Items.Select(item => NormalizeRelativePath(item.Path)).ToHashSet(StringComparer.OrdinalIgnoreCase);
+    if (paths.Any(path => !trashedPaths.Contains(path)))
+        return Results.BadRequest(new { success = false, message = "只有回收站中的本机图片可以永久删除" });
     var deleted = 0;
     foreach (var path in paths) {
         var file = ResolveGalleryPath(path, mustExist: false);
         if (File.Exists(file) && IsGalleryImage(file)) { File.Delete(file); deleted++; }
     }
     await UpdateIndexedPaths(paths, null);
+    await SetGalleryTrash(paths, trashed: false, requireExisting: false);
     return Results.Ok(new { success = true, deleted });
 }).DisableAntiforgery();
 
@@ -1256,8 +1311,12 @@ JsonObject BuildLocalWorkflow(string relative, DateTime modifiedAtUtc, JsonObjec
     Bind("scheduler", sampler, "scheduler");
     if (sampler?.Value["inputs"]?["denoise"] != null) Bind("denoise", sampler, "denoise");
 
-    var checkpoint = Find(node => node["class_type"]?.GetValue<string>() == "CheckpointLoaderSimple" && node["inputs"]?["ckpt_name"] != null);
-    Bind("checkpoint", checkpoint, "ckpt_name");
+    var checkpoint = Find(node => node["class_type"]?.GetValue<string>() is string type &&
+        type.Contains("Checkpoint", StringComparison.OrdinalIgnoreCase) && node["inputs"]?["ckpt_name"] != null);
+    var diffusionModel = Find(node => node["class_type"]?.GetValue<string>() is string type &&
+        type.Contains("UNET", StringComparison.OrdinalIgnoreCase) && node["inputs"]?["unet_name"] != null);
+    var primaryModel = checkpoint ?? diffusionModel;
+    Bind("checkpoint", primaryModel, checkpoint != null ? "ckpt_name" : "unet_name", "主模型");
     var loraText = Find(node => TitleHas(node, "LoRA") && node["inputs"]?["text"] is JsonValue);
     var loraNode = Find(node => node["class_type"]?.GetValue<string>()?.Contains("lora", StringComparison.OrdinalIgnoreCase) == true || TitleHas(node, "LoRA"));
     if (loraText != null) {
@@ -1382,13 +1441,14 @@ JsonObject BuildLocalWorkflow(string relative, DateTime modifiedAtUtc, JsonObjec
         },
         ["defaults"] = defaults,
         ["fields"] = exposed,
-        ["models"] = checkpoint?.Value["inputs"]?["ckpt_name"] is JsonNode checkpointName ? new JsonArray(checkpointName.DeepClone()) : new JsonArray(),
+        ["models"] = defaults["checkpoint"] is JsonNode primaryModelName ? new JsonArray(primaryModelName.DeepClone()) : new JsonArray(),
         ["capabilities"] = new JsonObject { ["controlNet"] = hasControlNet, ["styleReference"] = false, ["poseReference"] = false, ["inputImage"] = needsSourceImage, ["inpaint"] = hasInpaintPipeline, ["outpaint"] = hasInpaintPipeline, ["autoCutout"] = autoCutout, ["generationAndCutout"] = generationAndCutout, ["cutoutTarget"] = supportsCutoutTarget }
     };
 }
 
 string GalleryRoot() => Path.GetFullPath(settings.ActiveProfile.OutputDirectory);
 string GalleryIndexPath() => Path.Combine(GalleryRoot(), ".aiprovider-gallery.json");
+string GalleryTrashIndexPath() => Path.Combine(GalleryRoot(), ".aiprovider-trash.json");
 string MigrationSettingsPath() => Path.Combine(AppContext.BaseDirectory, "bridge-user-settings.json");
 string GetMigrationDirectory() {
     try {
@@ -1569,12 +1629,14 @@ async Task UpdateIndexedPaths(IEnumerable<string> oldPaths, string? newPath) {
     } finally { galleryIndexLock.Release(); }
 }
 
-async Task<List<GalleryItem>> ScanGallery(int maxItems) {
+async Task<List<GalleryItem>> ScanGallery(int maxItems, bool trashedOnly = false) {
     await galleryIndexLock.WaitAsync();
     try {
         var root = GalleryRoot();
         if (!Directory.Exists(root)) return new List<GalleryItem>();
         var index = await ReadGalleryIndex();
+        var trash = await ReadGalleryTrashIndex();
+        var trashedPaths = trash.Items.Select(item => NormalizeRelativePath(item.Path)).ToHashSet(StringComparer.OrdinalIgnoreCase);
         var files = Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories)
             .Where(IsGalleryImage)
             .Select(path => new GalleryFile {
@@ -1583,6 +1645,7 @@ async Task<List<GalleryItem>> ScanGallery(int maxItems) {
                 Filename = Path.GetFileName(path),
                 CreatedAt = new DateTimeOffset(File.GetLastWriteTime(path))
             })
+            .Where(file => trashedPaths.Contains(file.Path) == trashedOnly)
             .OrderByDescending(file => file.CreatedAt)
             .Take(5000)
             .ToList();
@@ -1826,6 +1889,42 @@ string CompactLoraDisplayName(string modelName) {
     return string.IsNullOrWhiteSpace(name) ? "未命名 LoRA" : name;
 }
 
+async Task<GalleryTrashIndex> ReadGalleryTrashIndex() {
+    var path = GalleryTrashIndexPath();
+    if (!File.Exists(path)) return new GalleryTrashIndex();
+    try {
+        return JsonSerializer.Deserialize<GalleryTrashIndex>(await File.ReadAllTextAsync(path), GalleryJsonOptions()) ?? new GalleryTrashIndex();
+    } catch (JsonException exception) {
+        throw new InvalidDataException($"Bridge 回收站索引损坏，已停止覆盖原文件：{path}", exception);
+    }
+}
+
+async Task SetGalleryTrash(IEnumerable<string> paths, bool trashed, bool requireExisting) {
+    var normalized = paths.Select(NormalizeRelativePath).Where(path => path.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+    foreach (var path in normalized) ResolveGalleryPath(path, mustExist: requireExisting);
+    await galleryIndexLock.WaitAsync();
+    try {
+        var index = await ReadGalleryTrashIndex();
+        var pathSet = normalized.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        index.Items.RemoveAll(item => pathSet.Contains(NormalizeRelativePath(item.Path)));
+        if (trashed) index.Items.AddRange(normalized.Select(path => new GalleryTrashRecord { Path = path, TrashedAt = DateTimeOffset.Now }));
+        Directory.CreateDirectory(GalleryRoot());
+        var target = GalleryTrashIndexPath();
+        var temporary = target + ".tmp";
+        await File.WriteAllTextAsync(temporary, JsonSerializer.Serialize(index, GalleryJsonOptions(writeIndented: true)));
+        File.Move(temporary, target, true);
+    } finally { galleryIndexLock.Release(); }
+}
+
+string CompactModelDisplayName(string modelName) {
+    var normalized = modelName.Replace('\\', '/');
+    var file = normalized.Split('/').Last();
+    var name = Path.GetFileNameWithoutExtension(file).Trim();
+    var directory = string.Join(" / ", normalized.Split('/').SkipLast(1));
+    if (string.IsNullOrWhiteSpace(name)) return modelName;
+    return string.IsNullOrWhiteSpace(directory) ? name : $"{name} · {directory}";
+}
+
 bool IsLoraPlaceholder(string modelName) {
     var value = modelName.Trim().Replace("_", "").Replace("-", "").Replace(" ", "");
     return value.Equals("none", StringComparison.OrdinalIgnoreCase) ||
@@ -1910,6 +2009,14 @@ sealed class LocalWorkflowRejection {
 sealed class GalleryIndex {
     public int Version { get; set; } = 1;
     public List<GalleryGenerationRecord> Generations { get; set; } = new();
+}
+sealed class GalleryTrashIndex {
+    public int Version { get; set; } = 1;
+    public List<GalleryTrashRecord> Items { get; set; } = new();
+}
+sealed class GalleryTrashRecord {
+    public string Path { get; set; } = "";
+    public DateTimeOffset TrashedAt { get; set; }
 }
 sealed class BridgeQueuedGeneration {
     public string PromptId { get; set; } = "";

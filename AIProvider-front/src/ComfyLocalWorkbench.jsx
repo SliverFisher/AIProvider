@@ -74,6 +74,19 @@ const limitGalleryImages = (entries, limit = 100) => {
     return images.length ? [{ ...entry, images, count: images.length, imageUrl: images[0]?.url || null }] : [];
   });
 };
+const sliceGalleryImages = (entries, skip, take) => {
+  let remainingSkip = skip;
+  let remainingTake = take;
+  return entries.flatMap((entry) => {
+    if (remainingTake <= 0) return [];
+    const images = entry.images || [];
+    if (remainingSkip >= images.length) { remainingSkip -= images.length; return []; }
+    const pageImages = images.slice(remainingSkip, remainingSkip + remainingTake);
+    remainingSkip = 0;
+    remainingTake -= pageImages.length;
+    return pageImages.length ? [{ ...entry, images: pageImages, count: pageImages.length, imageUrl: pageImages[0]?.url || null }] : [];
+  });
+};
 const createGallerySource = () => ({
   serverEntries: [],
   recentEntries: [],
@@ -130,6 +143,7 @@ const parseLoras = (value) => {
 const loraDisplayName = (value) => String(value || "").replace(/\\/g, "/").split("/").pop().replace(/\.(safetensors|ckpt|pt)$/i, "");
 const assetRecordToGalleryEntry = (item) => ({
   id: `asset-${item.id}`, assetId: item.id, source: "asset", platform: item.platform,
+  status: item.status, trashOriginalStatus: item.trashOriginalStatus,
   prompt: item.prompt, negativePrompt: item.negativePrompt, loras: parseLoras(item.lorasJson), seed: item.seed, steps: item.steps,
   cfg: item.cfg, sampler: item.sampler, scheduler: item.scheduler, workflowId: item.workflowId,
   width: item.width, height: item.height, createdAt: item.generatedAt || item.createdAt,
@@ -271,6 +285,7 @@ export default function ComfyLocalWorkbench({ mode = "workbench", active = true 
     output: createGallerySource(),
     pending: createGallerySource(),
     assets: createGallerySource(),
+    trash: createGallerySource(),
   }));
   const [galleryWorkflowFilter, setGalleryWorkflowFilter] = useState("all");
   const [galleryTransparencyFilter, setGalleryTransparencyFilter] = useState("all");
@@ -301,6 +316,8 @@ export default function ComfyLocalWorkbench({ mode = "workbench", active = true 
   const [workflows, setWorkflows] = useState([]);
   const [loraModels, setLoraModels] = useState([]);
   const [loraModelsLoading, setLoraModelsLoading] = useState(false);
+  const [mainModels, setMainModels] = useState([]);
+  const [mainModelsLoading, setMainModelsLoading] = useState(false);
   const [workflowDirectory, setWorkflowDirectory] = useState("F:\\AI\\ComfyUI_windows_portable_nvidia\\ComfyUI_windows_portable\\ComfyUI\\user\\default\\workflows");
   const [workflowRejected, setWorkflowRejected] = useState([]);
   const [workflowLoading, setWorkflowLoading] = useState(false);
@@ -326,7 +343,7 @@ export default function ComfyLocalWorkbench({ mode = "workbench", active = true 
     taskMissingChecks = useRef(new Map()),
     galleryModeRef = useRef("output"),
     gallerySourcesRef = useRef(gallerySources),
-    galleryRequestVersions = useRef({ output: 0, pending: 0, assets: 0 }),
+    galleryRequestVersions = useRef({ output: 0, pending: 0, assets: 0, trash: 0 }),
     pendingGenerationSourceIds = useRef(new Set()),
     pendingSourceImageRef = useRef(false),
     comfyHistoryIds = useRef(new Set()),
@@ -340,7 +357,8 @@ export default function ComfyLocalWorkbench({ mode = "workbench", active = true 
     bridgeExitIntent = useRef(""),
     defaultPresetApplied = useRef(""),
     batchStopRequested = useRef(false),
-    viewerTransform = useRef(null);
+    viewerTransform = useRef(null),
+    viewerActionsRef = useRef({ requestDelete: null, route: null });
   gallerySourcesRef.current = gallerySources;
   const activeGallerySource = gallerySources[galleryMode];
   const history = visibleGalleryEntries(galleryMode, activeGallerySource);
@@ -851,6 +869,26 @@ export default function ComfyLocalWorkbench({ mode = "workbench", active = true 
       .finally(() => { if (!cancelled) setLoraModelsLoading(false); });
     return () => { cancelled = true; };
   }, [active, launcher, mode, running, token]);
+  const mainModelBinding = workflows.find((workflow) => workflow.id === form.workflowId)?.binding?.fields?.checkpoint;
+  useEffect(() => {
+    if (mode !== "workbench" || !active || !token || launcher !== "ready" || !running || !mainModelBinding?.nodeType || !mainModelBinding?.input) {
+      setMainModels([]);
+      setMainModelsLoading(false);
+      return undefined;
+    }
+    let cancelled = false;
+    setMainModels([]);
+    setMainModelsLoading(true);
+    const query = new URLSearchParams({ nodeType: mainModelBinding.nodeType, input: mainModelBinding.input });
+    call(`/api/main-models?${query}`, {}, 30000, token)
+      .then((response) => readJson(response, "主模型接口").then((data) => {
+        if (!response.ok) throw new Error(data.message || `HTTP ${response.status}`);
+        if (!cancelled) setMainModels(data.models || []);
+      }))
+      .catch((exception) => { if (!cancelled) setError(`读取主模型失败：${exception.message}`); })
+      .finally(() => { if (!cancelled) setMainModelsLoading(false); });
+    return () => { cancelled = true; };
+  }, [active, launcher, mainModelBinding?.input, mainModelBinding?.nodeType, mode, running, token]);
   const saveWorkflowDirectory = async () => {
     const response = await call("/api/local-workflows/settings", {
       method: "POST", headers: { "Content-Type": "application/json" },
@@ -924,7 +962,6 @@ export default function ComfyLocalWorkbench({ mode = "workbench", active = true 
     });
   };
   const hydrateGalleryEntries = async (entries, mode, authToken, cachedEntries = []) => {
-    const assets = mode === "assets" || mode === "pending";
     const cachedImages = new Map(
       cachedEntries.flatMap((item) => (item.images || [])
         .filter((image) => image.url)
@@ -932,6 +969,7 @@ export default function ComfyLocalWorkbench({ mode = "workbench", active = true 
     );
     return mapLimit(
       entries, 6, async (item) => {
+        const asset = item.source === "asset" || mode === "assets" || mode === "pending";
         const settledImages = await Promise.allSettled(
           (item.images || []).map(async (image) => {
             const cachedImage = cachedImages.get(galleryImageAddress(mode, image));
@@ -947,7 +985,7 @@ export default function ComfyLocalWorkbench({ mode = "workbench", active = true 
               };
             }
             const query = new URLSearchParams({ path: image.path });
-            const response = await call(`${assets ? "/api/assets/file" : "/api/gallery/file"}?${query}`, {}, 30000, authToken);
+            const response = await call(`${asset ? "/api/assets/file" : "/api/gallery/file"}?${query}`, {}, 30000, authToken);
             if (!response.ok) throw new Error("missing image");
             const blob = await response.blob();
             return { ...image, blob, url: URL.createObjectURL(blob), transparent: typeof recordedTransparency === "boolean" ? recordedTransparency : image.transparent ?? null };
@@ -1001,6 +1039,39 @@ export default function ComfyLocalWorkbench({ mode = "workbench", active = true 
     const assets = mode === "assets" || mode === "pending";
     const statusParam = mode === "pending" ? "&status=PENDING" : mode === "assets" ? "&status=ACTIVE" : "";
     try {
+      if (mode === "trash") {
+        const localResponse = await call("/api/gallery/trash?maxItems=5000", {}, 30000, authToken);
+        const localData = await readJson(localResponse, "本机图片回收站");
+        if (!localResponse.ok) throw new Error(localData.message || `HTTP ${localResponse.status}`);
+        const assetItems = [];
+        let assetPage = 1;
+        let assetPages = 1;
+        do {
+          const assetResponse = await fetch(`/api/assets?platform=${encodeURIComponent(platform)}&page=${assetPage}&pageSize=100&status=TRASHED`, { signal: deadline(30000) });
+          const assetData = await readJson(assetResponse, "资产回收站");
+          if (!assetResponse.ok || assetData.code !== 200) throw new Error(assetData.message || `HTTP ${assetResponse.status}`);
+          assetItems.push(...(assetData.data?.items || []).map(assetRecordToGalleryEntry));
+          assetPages = Number(assetData.data?.pages || 0);
+          assetPage += 1;
+        } while (assetPage <= assetPages);
+        const allItems = [...(localData.items || []), ...assetItems]
+          .sort((left, right) => Date.parse(right.createdAt || 0) - Date.parse(left.createdAt || 0));
+        const total = allItems.reduce((count, item) => count + (item.images || []).length, 0);
+        const pages = total ? Math.ceil(total / 100) : 0;
+        const currentPage = pages ? Math.min(Math.max(1, page), pages) : 1;
+        const sourceItems = sliceGalleryImages(allItems, (currentPage - 1) * 100, 100);
+        const cachedAtStart = [...sourceBeforeRequest.serverEntries, ...sourceBeforeRequest.recentEntries];
+        const hydrated = await hydrateGalleryEntries(sourceItems, mode, authToken, cachedAtStart);
+        if (galleryRequestVersions.current[mode] !== requestVersion) {
+          releaseGalleryUrlsNotRetained(hydrated, [...gallerySourcesRef.current[mode].serverEntries, ...gallerySourcesRef.current[mode].recentEntries]);
+          return;
+        }
+        const current = gallerySourcesRef.current[mode];
+        const serverEntries = reconcileGalleryUrls(hydrated, mode, [...current.serverEntries, ...current.recentEntries]);
+        releaseGalleryUrlsNotRetained([...current.serverEntries, ...current.recentEntries], serverEntries);
+        replaceGallerySource(mode, () => ({ serverEntries, recentEntries: [], page: currentPage, serverPage: currentPage, pages, total, status: "ready", loadedAt: Date.now() }));
+        return;
+      }
       const response = assets
         ? await fetch(`/api/assets?platform=${encodeURIComponent(platform)}&page=${page}&pageSize=100${statusParam}`, { signal: deadline(30000) })
         : await call(`/api/gallery?page=${page}&pageSize=100`, {}, 30000, authToken);
@@ -1697,6 +1768,10 @@ export default function ComfyLocalWorkbench({ mode = "workbench", active = true 
     }
   };
   const requestViewerDelete = (item, image) => {
+    if (galleryModeRef.current === "trash") {
+      setDeleteConfirm({ kind: "item", item, image, message: "永久删除当前图片？此操作不可恢复。" });
+      return;
+    }
     performDeleteImage(item, image);
   };
   const closeDetail = () => {
@@ -1710,7 +1785,7 @@ export default function ComfyLocalWorkbench({ mode = "workbench", active = true 
       next.delete(removedKey);
       return next;
     });
-    removeGalleryImages(item.source === "asset" ? "assets" : "output", [image]);
+    removeGalleryImages(galleryModeRef.current, [image]);
     setDetail((current) => {
       if (!current) return current;
       const removedIndex = current.images.findIndex(
@@ -1752,7 +1827,12 @@ export default function ComfyLocalWorkbench({ mode = "workbench", active = true 
       }
       if (event.key === "Delete" && !event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey) {
         event.preventDefault();
-        requestViewerDelete(currentImage.task, currentImage);
+        viewerActionsRef.current.requestDelete?.(currentImage.task, currentImage);
+        return;
+      }
+      if (["End", "PageDown"].includes(event.key) && !event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey && galleryModeRef.current !== "trash") {
+        event.preventDefault();
+        viewerActionsRef.current.route?.(currentImage.task, currentImage, event.key === "End" ? "PENDING" : "ACTIVE");
         return;
       }
       if (!["ArrowLeft", "ArrowRight"].includes(event.key) || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
@@ -1904,51 +1984,32 @@ export default function ComfyLocalWorkbench({ mode = "workbench", active = true 
     }
   };
   const performDeleteSelected = async () => {
-    const deletingAssets = galleryMode === "assets" || galleryMode === "pending";
     if (!selectedImages.size) return;
     setBusy(true);
     setError("");
     try {
       const selectedEntries = selectedGalleryImages();
-      const paths = selectedEntries.map(({ image }) => image.path);
-      const response = await call(deletingAssets ? "/api/assets/delete" : "/api/gallery/delete", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ paths }),
-      }, 30000);
-      const data = await readJson(response, deletingAssets ? "迁移资产删除接口" : "本机图片删除接口");
-      if (!response.ok) throw new Error(data.message || "删除失败");
-      if (deletingAssets) {
-        const backend = await fetch("/api/assets/delete", {
-          method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            platform,
-            ids: [...new Set(selectedEntries.map(({ item }) => item.assetId).filter(Boolean))],
-          }),
-        });
-        const backendData = await readJson(backend, "后端资产删除接口");
-        if (!backend.ok || backendData.code !== 200) throw new Error(backendData.message || "后端资产记录删除失败");
-      }
-      removeGalleryImages(deletingAssets ? (galleryMode === "pending" ? "pending" : "assets") : "output", selectedEntries.map(({ image }) => image));
+      if (galleryMode === "trash") await permanentlyDeleteEntries(selectedEntries);
+      else await moveEntriesToTrash(selectedEntries);
+      removeGalleryImages(galleryMode, selectedEntries.map(({ image }) => image));
       setSelectedImages(new Set());
       setSelectionMode(false);
+      setNotice(galleryMode === "trash" ? `已永久删除 ${selectedEntries.length} 张图片` : `已移入回收站 ${selectedEntries.length} 张图片`);
     } catch (e) {
-      setError(`批量删除失败：${e.message}`);
+      setError(`${galleryMode === "trash" ? "永久删除" : "移入回收站"}失败：${e.message}`);
     } finally {
       setBusy(false);
     }
   };
   const deleteSelected = () => {
     if (!selectedImages.size) return;
-    if (galleryMode === "output" && selectedImages.size === 1) {
+    if (galleryMode !== "trash") {
       performDeleteSelected();
       return;
     }
     setDeleteConfirm({
       kind: "selected",
-      message: galleryMode === "assets" || galleryMode === "pending"
-        ? `永久删除选中的 ${selectedImages.size} 张资产图片？此操作不可恢复。`
-        : `删除选中的 ${selectedImages.size} 张本机图片？`,
+      message: `永久删除选中的 ${selectedImages.size} 张图片？此操作不可恢复。`,
     });
   };
   const openMoveDialog = () => {
@@ -2114,11 +2175,37 @@ export default function ComfyLocalWorkbench({ mode = "workbench", active = true 
       setSelectedImages(new Set());
       setSelectionMode(false);
       setNotice(updatedCount ? `已转成资产 ${updatedCount} 张图片` : "所选图片已转成资产");
+      const viewerEntry = entries.length === 1 ? entries[0] : null;
+      if (viewerEntry && detail) advanceDetailAfterAction(viewerEntry.item, viewerEntry.image);
     } catch (e) {
       setError(`转成资产失败：${e.message}`);
     } finally {
       setBusy(false);
     }
+  };
+  const migrateActiveToPending = async (entries) => {
+    if (!entries.length) return;
+    setBusy(true);
+    setError("");
+    try {
+      const ids = entries.map(({ item }) => item.assetId).filter(Boolean);
+      if (!ids.length) throw new Error("未找到资产 ID");
+      const response = await fetch("/api/assets/status", {
+        method: "PUT", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ platform, ids, status: "PENDING" }),
+      });
+      const data = await readJson(response, "资产状态更新接口");
+      if (!response.ok || data.code !== 200) throw new Error(data.message || "状态更新失败");
+      removeGalleryImages("assets", entries.map(({ image }) => image));
+      await addRecentAssetRecords(entries.map(({ item }) => ({ ...item, status: "PENDING" })), token, "pending");
+      setSelectedImages(new Set());
+      setSelectionMode(false);
+      setNotice(`已加入待处理 ${data.data?.updated || entries.length} 张图片`);
+      const viewerEntry = entries.length === 1 ? entries[0] : null;
+      if (viewerEntry && detail) advanceDetailAfterAction(viewerEntry.item, viewerEntry.image);
+    } catch (exception) {
+      setError(`加入待处理失败：${exception.message}`);
+    } finally { setBusy(false); }
   };
   const directToAsset = async () => {
     const entries = selectedGalleryImages();
@@ -2130,13 +2217,28 @@ export default function ComfyLocalWorkbench({ mode = "workbench", active = true 
     if (galleryMode === "assets") return migrateAssetEntries(entries);
     return migratePaths(entries.map(({ image }) => image.path), null, "PENDING");
   };
+  const routeViewerImage = (item, image, targetStatus) => {
+    const entry = { item, image, key: imageSelectionKey(item, image) };
+    if (item.source !== "asset") {
+      migratePaths([image.path], entry, targetStatus);
+      return;
+    }
+    const currentStatus = galleryModeRef.current === "pending" ? "PENDING" : "ACTIVE";
+    if (currentStatus === targetStatus) {
+      setNotice(targetStatus === "PENDING" ? "图片已在待处理" : "图片已在我的资产");
+      return;
+    }
+    if (targetStatus === "ACTIVE") migratePendingToActive([entry]);
+    else migrateActiveToPending([entry]);
+  };
+  viewerActionsRef.current = { requestDelete: requestViewerDelete, route: routeViewerImage };
   const contextEntry = () => imageMenu ? { item: imageMenu.item, image: imageMenu.image, key: imageSelectionKey(imageMenu.item, imageMenu.image) } : null;
   const contextDelete = () => {
     const entry = contextEntry();
     if (!entry) return;
-    const fromViewer = imageMenu.viewer;
     setImageMenu(null);
-    performDeleteImage(entry.item, entry.image);
+    if (galleryMode === "trash") setDeleteConfirm({ kind: "item", item: entry.item, image: entry.image, message: "永久删除当前图片？此操作不可恢复。" });
+    else performDeleteImage(entry.item, entry.image);
   };
   const contextCopy = async () => {
     const entry = contextEntry();
@@ -2179,30 +2281,79 @@ export default function ComfyLocalWorkbench({ mode = "workbench", active = true 
     setImageMenu(null);
     await openTwitterTask([entry]);
   };
-  const performDeleteImage = async (item, image) => {
-    const deletingAsset = item.source === "asset";
+  const moveEntriesToTrash = async (entries) => {
+    const localPaths = entries.filter(({ item }) => item.source !== "asset").map(({ image }) => image.path);
+    const assetIds = [...new Set(entries.filter(({ item }) => item.source === "asset").map(({ item }) => item.assetId).filter(Boolean))];
+    if (localPaths.length) {
+      const response = await call("/api/gallery/trash", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ paths: localPaths }) }, 30000);
+      const data = await readJson(response, "本机图片回收站接口");
+      if (!response.ok) throw new Error(data.message || "本机图片移入回收站失败");
+    }
+    if (assetIds.length) {
+      const response = await fetch("/api/assets/trash", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ platform, ids: assetIds }) });
+      const data = await readJson(response, "资产回收站接口");
+      if (!response.ok || data.code !== 200) throw new Error(data.message || "资产移入回收站失败");
+    }
+  };
+  const permanentlyDeleteEntries = async (entries) => {
+    const localPaths = entries.filter(({ item }) => item.source !== "asset").map(({ image }) => image.path);
+    const assetEntries = entries.filter(({ item }) => item.source === "asset");
+    if (localPaths.length) {
+      const response = await call("/api/gallery/delete", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ paths: localPaths }) }, 30000);
+      const data = await readJson(response, "本机图片永久删除接口");
+      if (!response.ok) throw new Error(data.message || "本机图片永久删除失败");
+    }
+    if (assetEntries.length) {
+      const paths = assetEntries.map(({ image }) => image.path);
+      const localResponse = await call("/api/assets/delete", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ paths }) }, 30000);
+      const localData = await readJson(localResponse, "资产文件永久删除接口");
+      if (!localResponse.ok) throw new Error(localData.message || "资产文件永久删除失败");
+      const ids = [...new Set(assetEntries.map(({ item }) => item.assetId).filter(Boolean))];
+      const backendResponse = await fetch("/api/assets/delete", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ platform, ids }) });
+      const backendData = await readJson(backendResponse, "资产记录永久删除接口");
+      if (!backendResponse.ok || backendData.code !== 200) throw new Error(backendData.message || "资产记录永久删除失败");
+    }
+  };
+  const restoreEntries = async (entries) => {
+    const localPaths = entries.filter(({ item }) => item.source !== "asset").map(({ image }) => image.path);
+    const assetIds = [...new Set(entries.filter(({ item }) => item.source === "asset").map(({ item }) => item.assetId).filter(Boolean))];
+    if (localPaths.length) {
+      const response = await call("/api/gallery/restore", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ paths: localPaths }) }, 30000);
+      const data = await readJson(response, "本机图片恢复接口");
+      if (!response.ok) throw new Error(data.message || "本机图片恢复失败");
+    }
+    if (assetIds.length) {
+      const response = await fetch("/api/assets/restore", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ platform, ids: assetIds }) });
+      const data = await readJson(response, "资产恢复接口");
+      if (!response.ok || data.code !== 200) throw new Error(data.message || "资产恢复失败");
+    }
+  };
+  const restoreSelected = async () => {
+    if (galleryMode !== "trash" || !selectedImages.size) return;
+    const entries = selectedGalleryImages();
     setBusy(true);
     setError("");
     try {
-      const response = await call(deletingAsset ? "/api/assets/delete" : "/api/gallery/delete", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ paths: [image.path] }),
-      }, 30000);
-      const data = await readJson(response, "本机历史删除接口");
-      if (!response.ok)
-        throw new Error(data.message || `HTTP ${response.status}`);
-      if (deletingAsset) {
-        const backend = await fetch("/api/assets/delete", {
-          method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ platform, ids: [item.assetId] }),
-        });
-        const backendData = await readJson(backend, "后端资产删除接口");
-        if (!backend.ok || backendData.code !== 200) throw new Error(backendData.message || "后端资产记录删除失败");
-      }
+      await restoreEntries(entries);
+      removeGalleryImages("trash", entries.map(({ image }) => image));
+      setSelectedImages(new Set());
+      setSelectionMode(false);
+      setNotice(`已恢复 ${entries.length} 张图片`);
+    } catch (exception) {
+      setError(`恢复失败：${exception.message}`);
+    } finally { setBusy(false); }
+  };
+  const performDeleteImage = async (item, image) => {
+    setBusy(true);
+    setError("");
+    try {
+      const entry = { item, image, key: imageSelectionKey(item, image) };
+      if (galleryModeRef.current === "trash") await permanentlyDeleteEntries([entry]);
+      else await moveEntriesToTrash([entry]);
       advanceDetailAfterAction(item, image);
+      setNotice(galleryModeRef.current === "trash" ? "图片已永久删除" : "图片已移入回收站");
     } catch (e) {
-      setError(`删除失败：${e.message}`);
+      setError(`${galleryModeRef.current === "trash" ? "永久删除" : "移入回收站"}失败：${e.message}`);
     } finally {
       setBusy(false);
     }
@@ -2476,6 +2627,7 @@ export default function ComfyLocalWorkbench({ mode = "workbench", active = true 
             onWorkflowChange={selectWorkflow} referenceFiles={referenceFiles} onReference={chooseReference}
             onReferenceDrop={dropHistoryImageAsReference}
             loraModels={loraModels} loraModelsLoading={loraModelsLoading}
+            mainModels={mainModels} mainModelsLoading={mainModelsLoading}
             promptOptions={allPromptOptions}
             onPromptOptionsReload={loadPromptOptions}
             presets={presets} presetQuery={presetQuery} onPresetChange={choosePreset}
@@ -2492,6 +2644,7 @@ export default function ComfyLocalWorkbench({ mode = "workbench", active = true 
                 <button className={galleryMode === "output" ? "active" : ""} onClick={() => switchGallery("output").catch((e) => setError(e.message))}>本机图片</button>
                 <button className={galleryMode === "pending" ? "active" : ""} onClick={() => switchGallery("pending").catch((e) => setError(e.message))}>待处理</button>
                 <button className={galleryMode === "assets" ? "active" : ""} onClick={() => switchGallery("assets").catch((e) => setError(e.message))}>我的资产</button>
+                <button className={galleryMode === "trash" ? "active" : ""} onClick={() => switchGallery("trash").catch((e) => setError(e.message))}>回收站</button>
               </div>
               <div className="gallery-filters">
                 <select aria-label="按工作流筛选图片" value={galleryWorkflowFilter} onChange={(event) => { setGalleryWorkflowFilter(event.target.value); setSelectedImages(new Set()); }}>
@@ -2534,9 +2687,10 @@ export default function ComfyLocalWorkbench({ mode = "workbench", active = true 
                     disabled={!selectedImages.size}
                     onClick={deleteSelected}
                   >
-                    删除 {selectedImages.size || ""}
+                    {galleryMode === "trash" ? "永久删除" : "删除"} {selectedImages.size || ""}
                   </button>
-                  <button disabled={!selectedImages.size || !batchInputWorkflows.length} onClick={openBatchOperation}>批量操作 {selectedImages.size || ""}</button>
+                  {galleryMode === "trash" && <button disabled={!selectedImages.size} onClick={restoreSelected}>恢复 {selectedImages.size || ""}</button>}
+                  {galleryMode !== "trash" && <button disabled={!selectedImages.size || !batchInputWorkflows.length} onClick={openBatchOperation}>批量操作 {selectedImages.size || ""}</button>}
                   {galleryMode === "output" && <>
                     <button
                       className="move-action"
@@ -2560,13 +2714,13 @@ export default function ComfyLocalWorkbench({ mode = "workbench", active = true 
                     >
                       转成资产 {selectedImages.size || ""}
                     </button>}
-                  <button
+                  {galleryMode !== "trash" && <button
                     className="twitter-task-action"
                     disabled={!selectedImages.size || selectedTwitterImages().length > 4}
                     onClick={() => openTwitterTask().catch((e) => setError(e.message))}
                   >
                     <PaperPlaneTilt /> 添加到 Twitter 任务 {selectedTwitterImages().length || ""}
-                  </button>
+                  </button>}
                   <button
                     onClick={() => {
                       setSelectionMode(false);
@@ -2621,7 +2775,7 @@ export default function ComfyLocalWorkbench({ mode = "workbench", active = true 
               {activeGalleryPage.status === "loading" ? <SpinnerGap className="spin" size={38} /> : <ImageSquare size={38} />}
               <span>{activeGalleryPage.status === "loading"
                 ? "正在读取图片…"
-                : galleryMode === "assets" ? `当前 ${platform} 暂无已登记资产` : galleryMode === "pending" ? "暂无待处理图片" : "生成结果只保存在本机"}</span>
+                : galleryMode === "trash" ? "回收站为空" : galleryMode === "assets" ? `当前 ${platform} 暂无已登记资产` : galleryMode === "pending" ? "暂无待处理图片" : "生成结果只保存在本机"}</span>
             </div>
           )}
           {history.length > 0 && filteredGalleryImages.length === 0 && (
@@ -2717,13 +2871,14 @@ export default function ComfyLocalWorkbench({ mode = "workbench", active = true 
       {imageMenu && <div className="image-context-menu" style={{ left: imageMenu.x, top: imageMenu.y }} onClick={(event) => event.stopPropagation()}>
         <button onClick={() => contextCopy()}><Copy />复制图片</button>
         <button onClick={() => contextOpenFolder()}><FolderOpen />打开所在文件夹</button>
-        <button className="danger" onClick={contextDelete}><Trash />删除</button>
-        {imageMenu.item.source !== "asset" && <button onClick={contextMigrate}><FolderOpen />加入待处理</button>}
-        {imageMenu.item.source !== "asset" && <button onClick={() => { const entry = contextEntry(); if (!entry) return; const fromViewer = imageMenu.viewer; setImageMenu(null); migratePaths([entry.image.path], fromViewer ? entry : null, "ACTIVE"); }}><FolderOpen />转成资产</button>}
-        {imageMenu.item.source === "asset" && galleryMode === "pending" && <button onClick={contextMigrate}><FolderOpen />转成资产</button>}
+        <button className="danger" onClick={contextDelete}><Trash />{galleryMode === "trash" ? "永久删除" : "删除"}</button>
+        {galleryMode === "trash" && <button onClick={() => { const entry = contextEntry(); if (!entry) return; setImageMenu(null); restoreEntries([entry]).then(() => { advanceDetailAfterAction(entry.item, entry.image); setNotice("图片已恢复"); }).catch((e) => setError(`恢复失败：${e.message}`)); }}><ArrowClockwise />恢复</button>}
+        {galleryMode !== "trash" && imageMenu.item.source !== "asset" && <button onClick={contextMigrate}><FolderOpen />加入待处理</button>}
+        {galleryMode !== "trash" && imageMenu.item.source !== "asset" && <button onClick={() => { const entry = contextEntry(); if (!entry) return; const fromViewer = imageMenu.viewer; setImageMenu(null); migratePaths([entry.image.path], fromViewer ? entry : null, "ACTIVE"); }}><FolderOpen />转成资产</button>}
+        {galleryMode !== "trash" && imageMenu.item.source === "asset" && galleryMode === "pending" && <button onClick={contextMigrate}><FolderOpen />转成资产</button>}
         <button onClick={() => openImageInfo(imageMenu.item, imageMenu.image)}><Info />详细</button>
         {!imageMenu.viewer && <button onClick={contextSelectAll}><CheckCircle />{allHistorySelected ? "取消全选" : "全选"}</button>}
-        {!imageMenu.viewer && <button onClick={() => contextTwitter().catch((e) => setError(e.message))}><PaperPlaneTilt />添加到 Twitter 任务</button>}
+        {galleryMode !== "trash" && !imageMenu.viewer && <button onClick={() => contextTwitter().catch((e) => setError(e.message))}><PaperPlaneTilt />添加到 Twitter 任务</button>}
       </div>}
       {batchOperation.open && <div className="history-modal batch-operation-modal" onMouseDown={(event) => event.target === event.currentTarget && !batchOperation.busy && setBatchOperation({ open: false, workflowId: "", busy: false })}>
         <div className="batch-operation-panel"><header><div><span>批量操作</span><h3>为 {selectedImages.size} 张图片创建任务</h3></div><button type="button" disabled={batchOperation.busy} onClick={() => setBatchOperation({ open: false, workflowId: "", busy: false })}><X /></button></header><label><span>选择输入图片工作流</span><select value={batchOperation.workflowId} onChange={(event) => setBatchOperation((current) => ({ ...current, workflowId: event.target.value }))}>{batchInputWorkflows.map((workflow) => <option key={workflow.id} value={workflow.id}>{workflow.name || workflow.id}</option>)}</select></label><p>每张图片会建立一个独立任务；提交前会使用图片 SHA-256 和工作流检查是否已经生成过。</p><footer><button disabled={batchOperation.busy} onClick={() => setBatchOperation({ open: false, workflowId: "", busy: false })}>取消</button><button className="confirm-batch-operation" disabled={batchOperation.busy || !batchOperation.workflowId} onClick={runBatchOperation}>{batchOperation.busy ? "检查并提交中…" : "开始批量操作"}</button></footer></div>
