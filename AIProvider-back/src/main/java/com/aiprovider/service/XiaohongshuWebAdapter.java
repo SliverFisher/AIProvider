@@ -20,7 +20,7 @@ public class XiaohongshuWebAdapter {
     private static final Logger log = LoggerFactory.getLogger(XiaohongshuWebAdapter.class);
     private static final Pattern QR_CODE_STATUS = Pattern.compile("\\\"codeStatus\\\"\\s*:\\s*([0-3])");
     private static final Pattern SAFE_RESPONSE_FIELD = Pattern.compile("\\\"(codeStatus|code|result|success)\\\"\\s*:\\s*(\\\"[^\\\"]{0,80}\\\"|-?\\d+|true|false|null)");
-    static final String IMAGE_UPLOAD_INPUT = "input[type='file'][accept*='.jpg'],input[type='file'][accept*='.jpeg'],input[type='file'][accept*='.png'],input[type='file'][accept*='.webp']";
+    static final String IMAGE_UPLOAD_INPUT = "input[type='file'][accept*='image'],input[type='file'][accept*='.jpg'],input[type='file'][accept*='.jpeg'],input[type='file'][accept*='.png'],input[type='file'][accept*='.webp']";
     private final boolean headless;
     private final double timeoutMs;
     private final long loginSessionTtlMs;
@@ -121,15 +121,17 @@ public class XiaohongshuWebAdapter {
             page.waitForTimeout(1000);
             pageLocation = safeLocation(page.url());
             if (isLoginUrl(page.url())) throw new XiaohongshuAutomationException("小红书登录会话已过期，请重新扫码登录");
+            stage = "进入发布笔记";
+            if (page.locator(IMAGE_UPLOAD_INPUT).count() == 0 && clickIfVisible(page, "发布笔记")) page.waitForTimeout(1200);
             stage = "切换到图文发布";
-            if (!clickIfVisible(page, "上传图文") && !clickIfVisible(page, "发布图文")) {
-                String diagnostic = publishPageDiagnostic(page);
-                log.error("XHS_PUBLISH image_entry_missing page={} diagnostic={}", safeLocation(page.url()), diagnostic);
-                throw new XiaohongshuAutomationException("小红书发布页未找到图文发布入口；页面诊断：" + diagnostic);
-            }
+            if (page.locator(IMAGE_UPLOAD_INPUT).count() == 0 && (clickIfVisible(page, "上传图文") || clickIfVisible(page, "发布图文"))) page.waitForTimeout(800);
             stage = "查找图片上传控件";
             Locator imageInputs = page.locator(IMAGE_UPLOAD_INPUT);
-            if (imageInputs.count() == 0) throw new XiaohongshuAutomationException("小红书图文发布页未生成图片上传控件");
+            if (imageInputs.count() == 0) {
+                String diagnostic = publishPageDiagnostic(page);
+                log.error("XHS_PUBLISH image_input_missing page={} diagnostic={}", safeLocation(page.url()), diagnostic);
+                throw new XiaohongshuAutomationException("小红书图文发布页未生成图片上传控件；页面诊断：" + diagnostic);
+            }
             Locator imageInput = imageInputs.first();
             stage = "上传文字卡";
             imageInput.setInputFiles(card);
