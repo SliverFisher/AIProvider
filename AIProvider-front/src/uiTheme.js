@@ -1,14 +1,20 @@
 export const UI_THEME_STORAGE_KEY = "aimaid_global_ui_theme";
 
+const ACCESSIBLE_DERIVED_TOKENS = {
+  "--text-muted-readable": "color-mix(in srgb, var(--text-muted) 55%, var(--text-primary))",
+  "--border-interactive": "color-mix(in srgb, var(--border-normal) 42%, var(--text-primary))",
+};
+
 export const DEFAULT_UI_THEME = {
   "--bg-page": "#19131a", "--bg-sidebar": "#120e13", "--bg-surface": "#221923", "--bg-card": "#2b202c", "--bg-card-hover": "#352637", "--bg-selected": "#4a2943",
   "--border-subtle": "#3a2c3b", "--border-normal": "#513b50", "--border-focus": "#ff8fbe",
   "--text-primary": "#fff3f8", "--text-secondary": "#d8bcc9", "--text-muted": "#967d89",
   "--accent-primary": "#ff8fbe", "--accent-secondary": "#c69cff", "--accent-soft": "#ffb8d4", "--accent-blue": "#82b7ff", "--accent-cyan": "#6fe2df", "--accent-mint": "#72ddb1", "--accent-yellow": "#ffc978", "--accent-red": "#ff718f",
   "--card-radius": "16px", "--control-radius": "10px", "--card-shadow-size": "30px",
+  ...ACCESSIBLE_DERIVED_TOKENS,
 };
 
-const shape = { "--card-radius": "16px", "--control-radius": "10px", "--card-shadow-size": "30px" };
+const shape = { "--card-radius": "16px", "--control-radius": "10px", "--card-shadow-size": "30px", ...ACCESSIBLE_DERIVED_TOKENS };
 const preset = (id, name, description, theme) => ({ id, name, description, theme: { ...theme, ...shape } });
 
 export const UI_THEME_PRESETS = [

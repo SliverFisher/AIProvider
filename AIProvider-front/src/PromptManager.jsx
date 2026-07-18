@@ -2,13 +2,14 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Copy, FloppyDisk, Plus, Star, Trash, Warning, X } from "@phosphor-icons/react";
 import { buildPromptCategories, composePrompts, emptySelectedOptions, extractNegativeExtra, extractPositiveExtra, normalizePrompt, relatedNegativePromptsForPositive, normalizeSelectedOptions } from "./promptComposer";
 import UiSearchField from "./UiSearchField";
+import { readJsonResponse } from "./apiResponse";
 import "./PromptManager.css";
 
 const emptyDraft = (definitions) => ({ id: null, name: "", selectedOptions: emptySelectedOptions(definitions), positiveExtra: "", negativeExtra: "", positivePrompt: "", negativePrompt: "", remark: "", isDefault: false });
 
 async function request(path, options) {
   const response = await fetch(path, options);
-  const payload = await response.json();
+  const payload = await readJsonResponse(response, "Prompt 服务响应异常");
   if (!response.ok || payload.code !== 200) throw new Error(payload.message || `请求失败 · ${response.status}`);
   return payload.data;
 }
@@ -137,9 +138,13 @@ export default function PromptManager({ onEditOptions }) {
       <header><div><span>PROMPT LIBRARY</span><h2>Prompt 方案</h2></div><div className="prompt-list-actions"><button onClick={onEditOptions}>编辑词条</button><button onClick={createNew} title="新建方案"><Plus /></button></div></header>
       <UiSearchField className="prompt-list-search" aria-label="搜索 Prompt 方案" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索方案名称…" />
       <div className="prompt-list-scroll">
-        {filtered.map((item) => <div key={item.id} role="button" tabIndex="0" className={`prompt-scheme-row ${String(item.id) === String(draft.id) ? "active" : ""}`} onClick={() => select(item)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); select(item); } }}>
-          <span>{item.name}</span><button type="button" className={`prompt-default-star ${item.isDefault ? "is-default" : ""}`} aria-label={item.isDefault ? `取消默认方案 ${item.name}` : `设为默认方案 ${item.name}`} title={item.isDefault ? "取消默认方案" : "设为默认方案"} onClick={(event) => { event.stopPropagation(); toggleDefault(item); }}><Star weight={item.isDefault ? "fill" : "regular"} /></button><small>{item.selectedOptions ? `${Object.values(item.selectedOptions).flat().length} 个结构化词条` : "未选择词条"}</small>
-        </div>)}
+        {filtered.map((item) => <article key={item.id} className={`prompt-scheme-row ${String(item.id) === String(draft.id) ? "active" : ""}`}>
+          <button type="button" className="prompt-scheme-select" aria-current={String(item.id) === String(draft.id) ? "true" : undefined} onClick={() => select(item)}>
+            <span>{item.name}</span>
+            <small>{item.selectedOptions ? `${Object.values(item.selectedOptions).flat().length} 个结构化词条` : "未选择词条"}</small>
+          </button>
+          <button type="button" className={`prompt-default-star ${item.isDefault ? "is-default" : ""}`} aria-label={item.isDefault ? `取消默认方案 ${item.name}` : `设为默认方案 ${item.name}`} title={item.isDefault ? "取消默认方案" : "设为默认方案"} onClick={() => toggleDefault(item)}><Star weight={item.isDefault ? "fill" : "regular"} /></button>
+        </article>)}
         {!filtered.length && <p>没有匹配的 Prompt 方案</p>}
       </div>
     </aside>

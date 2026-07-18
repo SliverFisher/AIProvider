@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, FloppyDisk, Plus, Trash, Warning } from "@phosphor-icons/react";
 import { buildPromptCategories, PROMPT_CATEGORIES } from "./promptComposer";
 import UiSearchField from "./UiSearchField";
+import { readJsonResponse } from "./apiResponse";
 import "./PromptOptionManager.css";
 
 const emptyDraft = () => ({ id: "", category: "Clothing", name: "", prompt: "", type: "positive", reverseId: "", sortOrder: 100, enabled: true, allowMultiple: true, persisted: false });
@@ -9,7 +10,7 @@ const MULTIPLE_CATEGORIES = new Set(["Character", "Appearance", "Special", "Clot
 const PAGE_SIZE = 100;
 
 async function request(path, options) {
-  const response = await fetch(path, options); const payload = await response.json();
+  const response = await fetch(path, options); const payload = await readJsonResponse(response, "Prompt 词条服务响应异常");
   if (!response.ok || payload.code !== 200) throw new Error(payload.message || `请求失败 · ${response.status}`);
   return payload.data;
 }

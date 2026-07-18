@@ -78,28 +78,52 @@ import VideoEditor from "./VideoEditor";
 import FoundryWorkbench from "./FoundryWorkbench";
 import CryptoMarket from "./CryptoMarket";
 import RemoteCodex from "./RemoteCodex";
+import { RELEASE_VERSION } from "./releaseVersion";
+import { readJsonResponse } from "./apiResponse";
 import "./App.css";
 import "./CodexTheme.css";
 import "./SemanticTheme.css";
 import "./KawaiiUi.css";
+import "./DesktopShell.css";
 
 const API = "/api";
 const NAV = [
-  { key: "workshop", label: "图像工坊", icon: ImageSquare },
-  { key: "prompts", label: "Prompt 管理", icon: SlidersHorizontal },
-  { key: "manualEditor", label: "图片编辑", icon: PaintBrush },
-  { key: "videoEditor", label: "视频编辑", icon: FilmSlate },
-  { key: "market", label: "市场行情", icon: ChartLineUp },
-  { key: "maid", label: "我的女仆", icon: Heart },
-  { key: "monitor", label: "监控中心", icon: Pulse },
-  { key: "remoteCodex", label: "远程 Codex", icon: ChatsCircle },
-  { key: "foundry", label: "链上工具", icon: Cube },
-  { key: "camera", label: "手机监控", icon: VideoCamera, closed: true, hidden: true },
-  { key: "twitter", label: "Twitter 发布", icon: XLogo },
-  { key: "contentOperations", label: "内容运营", icon: Broadcast },
-  { key: "appearance", label: "UI 控制", icon: Palette },
-  { key: "settings", label: "系统设置", icon: GearSix },
+  { key: "workshop", label: "图像工坊", icon: ImageSquare, group: "create" },
+  { key: "prompts", label: "Prompt 管理", icon: SlidersHorizontal, group: "create" },
+  { key: "manualEditor", label: "图片编辑", icon: PaintBrush, group: "create" },
+  { key: "videoEditor", label: "视频编辑", icon: FilmSlate, group: "create" },
+  { key: "maid", label: "我的女仆", icon: Heart, group: "create" },
+  { key: "market", label: "市场行情", icon: ChartLineUp, group: "operate" },
+  { key: "monitor", label: "监控中心", icon: Pulse, group: "operate" },
+  { key: "remoteCodex", label: "远程 Codex", icon: ChatsCircle, group: "operate" },
+  { key: "foundry", label: "链上工具", icon: Cube, group: "operate" },
+  { key: "camera", label: "手机监控", icon: VideoCamera, closed: true, hidden: true, group: "operate" },
+  { key: "twitter", label: "Twitter 发布", icon: XLogo, group: "publish" },
+  { key: "contentOperations", label: "内容运营", icon: Broadcast, group: "publish" },
+  { key: "appearance", label: "UI 控制", icon: Palette, group: "system" },
+  { key: "settings", label: "系统设置", icon: GearSix, group: "system" },
 ];
+const NAV_GROUPS = [
+  { key: "create", label: "创作" },
+  { key: "operate", label: "运营与工具" },
+  { key: "publish", label: "发布" },
+  { key: "system", label: "系统" },
+];
+const PAGE_DESCRIPTIONS = {
+  manualEditor: "本机画布、抠图与 AI 修补",
+  videoEditor: "素材、画布与时间线编辑",
+  market: "实时行情、K 线与订单簿",
+  prompts: "管理可复用的结构化提示词方案",
+  promptOptions: "维护 Prompt 词条与分类规则",
+  maid: "查看角色状态与模型活动",
+  monitor: "服务健康、资源、网络与费用",
+  remoteCodex: "连接远程 Codex 并管理对话",
+  foundry: "Foundry 工具与链上只读查询",
+  twitter: "账号连接、内容编辑与发布任务",
+  contentOperations: "采集、判断、发布与自动化运营",
+  appearance: "统一管理全站主题与组件外观",
+  settings: "本机工作流、输出与迁移目录",
+};
 const VISIBLE_NAV = NAV.filter((item) => !item.hidden);
 const MOBILE_NAV = [{ key: "home", label: "首页", icon: House }, ...VISIBLE_NAV];
 
@@ -137,7 +161,7 @@ const chartTip = {
 async function get(path) {
   const response = await fetch(`${API}${path}`);
   if (!response.ok) throw new Error(`请求失败 · ${response.status}`);
-  const result = await response.json();
+  const result = await readJsonResponse(response, "工作区服务响应异常");
   if (result.code !== 200) throw new Error(result.message || "请求失败");
   return result.data;
 }
@@ -246,6 +270,7 @@ function App() {
   const [promptOptionCategory, setPromptOptionCategory] = useState("");
   const dashboard = useDashboardData();
   const current = NAV.find((item) => item.key === (view === "promptOptions" ? "prompts" : view));
+  const compactShell = view === "workshop";
   useEffect(() => {
     const path = ({ workshop: "/workshop", manualEditor: "/manual-editor", videoEditor: "/video-editor", market: "/market", prompts: "/prompts", promptOptions: "/prompt-options", maid: "/maid", monitor: "/admin/monitor", remoteCodex: "/remote-codex", foundry: "/foundry", camera: "/camera", twitter: "/twitter", contentOperations: "/content-operations", appearance: "/appearance", settings: "/settings" })[view] || "/";
     if (window.location.pathname !== path) window.history.replaceState({}, "", path);
@@ -255,8 +280,8 @@ function App() {
     window.addEventListener("popstate", onPop); return () => window.removeEventListener("popstate", onPop);
   }, []);
   return (
-    <div className="neural-shell">
-      <aside className="rail">
+    <div className={`neural-shell ${compactShell ? "shell-compact" : "shell-expanded"}`}>
+      <aside className={`rail ${compactShell ? "rail-compact" : "rail-expanded"}`}>
         <button
           type="button"
           className={view === "home" ? "rail-brand active" : "rail-brand"}
@@ -268,16 +293,25 @@ function App() {
           <span className="rail-mascot"><i className="mascot-ear ear-left" /><i className="mascot-ear ear-right" /><Cat weight="fill" /><b>•ᴗ•</b><em>✦</em></span>
           <span className="rail-brand-label">MAID</span>
         </button>
-        <nav>
-          {VISIBLE_NAV.map((item) => (
-            <NavButton
-              key={item.key}
-              item={item}
-              active={view === item.key || (view === "promptOptions" && item.key === "prompts")}
-              onClick={() => setView(item.key)}
-            />
+        <nav aria-label="一级工作区">
+          {NAV_GROUPS.map((group) => (
+            <section className="rail-group" key={group.key} aria-label={group.label}>
+              <h2>{group.label}</h2>
+              {VISIBLE_NAV.filter((item) => item.group === group.key).map((item) => (
+                <NavButton
+                  key={item.key}
+                  item={item}
+                  active={view === item.key || (view === "promptOptions" && item.key === "prompts")}
+                  onClick={() => setView(item.key)}
+                />
+              ))}
+            </section>
           ))}
         </nav>
+        {!compactShell && <div className="rail-release" aria-label={`前端版本 ${RELEASE_VERSION.frontend}，后端版本 ${RELEASE_VERSION.backend}`}>
+          <span><b>前端</b>{RELEASE_VERSION.frontend}</span>
+          <span><b>后端</b>{RELEASE_VERSION.backend}</span>
+        </div>}
       </aside>
       <header className="mobile-head">
         <div className="mobile-logo">
@@ -287,13 +321,14 @@ function App() {
           <i /> LIVE
         </span>
       </header>
-      <main className={`workspace workspace-${view}`}>
-        {!["home", "appearance", "settings"].includes(view) && <KawaiiPageAtmosphere soft={["workshop", "manualEditor", "videoEditor", "prompts"].includes(view)} />}
+      <main className={`workspace workspace-${view} ${compactShell ? "workspace-compact-shell" : "workspace-expanded-shell"}`}>
+        {view === "workshop" && <KawaiiPageAtmosphere soft />}
         {view !== "home" && current && (
           <div className="section-head">
             <div>
-              <span className="eyebrow">AI Maid · Neural Command</span>
+              <span className="eyebrow">AI MAID · WORKSPACE</span>
               <h1>{current.label}</h1>
+              {PAGE_DESCRIPTIONS[view] && <p>{PAGE_DESCRIPTIONS[view]}</p>}
             </div>
             <SystemClock />
           </div>
@@ -353,6 +388,7 @@ function NavButton({ item, active, onClick, mobile = false }) {
       data-nav-key={item.key}
       onClick={item.closed ? undefined : onClick}
       title={item.closed ? `${item.label} · 暂未开放` : item.label}
+      aria-current={active ? "page" : undefined}
     >
       <Icon size={22} weight={active ? "duotone" : "regular"} />
       <span>{item.label}</span>

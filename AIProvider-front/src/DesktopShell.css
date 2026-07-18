@@ -1,0 +1,359 @@
+/* Desktop application shell. Image workshop internals are intentionally excluded. */
+.neural-shell {
+  --shell-rail-expanded: 216px;
+  --shell-rail-compact: 76px;
+  --surface-raised: color-mix(in srgb, var(--bg-card) 88%, var(--text-primary));
+}
+
+.rail {
+  box-sizing: border-box;
+  align-items: stretch;
+  overflow: hidden;
+  border-right: 1px solid var(--border-subtle) !important;
+  background: var(--bg-sidebar) !important;
+  backdrop-filter: none;
+  transition: width .2s ease;
+}
+
+.rail-expanded {
+  width: var(--shell-rail-expanded) !important;
+  padding: 0 12px 12px;
+}
+
+.rail-expanded .rail-brand {
+  justify-content: flex-start;
+  gap: 12px;
+  height: 60px;
+  padding: 0 8px;
+}
+
+.rail-expanded .rail-mascot {
+  flex: 0 0 auto;
+}
+
+.rail-expanded .rail-brand-label {
+  display: block;
+  color: var(--text-primary);
+  letter-spacing: .13em;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.rail-expanded nav {
+  display: block !important;
+  min-height: 0;
+  padding: 2px 0 5px !important;
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-normal) transparent;
+}
+
+.rail-group {
+  display: grid;
+  gap: 3px;
+  margin-bottom: 2px;
+}
+
+.rail-group h2 {
+  margin: 0;
+  padding: 4px 10px 2px;
+  color: var(--text-muted-readable);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: .12em;
+}
+
+.rail-expanded .nav-button {
+  position: relative;
+  justify-content: flex-start !important;
+  gap: 10px;
+  width: 100% !important;
+  height: 32px !important;
+  min-height: 32px;
+  margin: 0 !important;
+  padding: 0 10px;
+  border: 1px solid transparent !important;
+  border-radius: 8px !important;
+  background: transparent !important;
+  color: var(--text-secondary) !important;
+  box-shadow: none !important;
+  transform: none !important;
+}
+
+.rail-expanded .nav-button > svg {
+  box-sizing: border-box;
+  flex: 0 0 auto;
+  width: 20px !important;
+  height: 20px !important;
+  padding: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  filter: none !important;
+}
+
+.rail-expanded .nav-button > span {
+  position: static !important;
+  display: block;
+  min-width: 0;
+  padding: 0 !important;
+  overflow: hidden;
+  border: 0 !important;
+  background: transparent !important;
+  color: inherit !important;
+  opacity: 1 !important;
+  pointer-events: auto !important;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.rail-expanded .nav-button::before {
+  content: none !important;
+}
+
+.rail-expanded .nav-button:hover:not(:disabled) {
+  border-color: var(--border-subtle) !important;
+  background: var(--bg-card) !important;
+  color: var(--text-primary) !important;
+}
+
+.rail-expanded .nav-button.active {
+  border-color: var(--border-interactive) !important;
+  background: var(--bg-selected) !important;
+  color: var(--text-primary) !important;
+  font-weight: 700;
+}
+
+.rail-expanded .nav-button.active::after {
+  content: "";
+  position: absolute;
+  top: 8px;
+  bottom: 8px;
+  left: 0;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: var(--accent-primary);
+}
+
+.rail-release {
+  display: grid;
+  gap: 4px;
+  margin-top: auto;
+  padding: 7px 8px 1px;
+  border-top: 1px solid var(--border-subtle);
+  color: var(--text-muted-readable);
+  font: 9px/1.4 ui-monospace, SFMono-Regular, Consolas, monospace;
+}
+
+.rail-release span {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr);
+  gap: 6px;
+}
+
+.rail-release b {
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+
+.rail-compact {
+  width: var(--shell-rail-compact) !important;
+}
+
+.rail-compact .rail-group {
+  display: contents;
+}
+
+.rail-compact .rail-group h2 {
+  display: none;
+}
+
+.rail-compact nav {
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+
+.rail-compact nav::-webkit-scrollbar {
+  display: none;
+}
+
+.shell-expanded .workspace {
+  box-sizing: border-box;
+  width: calc(100% - var(--shell-rail-expanded));
+  margin-left: var(--shell-rail-expanded) !important;
+}
+
+.shell-compact .workspace {
+  box-sizing: border-box;
+  width: calc(100% - var(--shell-rail-compact));
+  margin-left: var(--shell-rail-compact) !important;
+}
+
+.workspace-expanded-shell {
+  min-width: 0;
+  padding: 0 24px 28px !important;
+  overflow-x: hidden;
+  background: var(--bg-page) !important;
+}
+
+.workspace-expanded-shell > .section-head {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: none !important;
+  height: 68px !important;
+  min-height: 68px !important;
+  margin: 0 !important;
+  padding: 10px 0 !important;
+  border-bottom: 1px solid var(--border-subtle) !important;
+}
+
+.workspace-expanded-shell > .section-head::after {
+  content: none !important;
+}
+
+.workspace-expanded-shell > .section-head > div:first-child {
+  min-width: 0;
+}
+
+.workspace-expanded-shell > .section-head .eyebrow {
+  display: block;
+  color: var(--text-muted-readable) !important;
+  font-size: 9px !important;
+  letter-spacing: .13em;
+}
+
+.workspace-expanded-shell > .section-head h1 {
+  margin: 2px 0 0 !important;
+  color: var(--text-primary) !important;
+  font-size: 20px !important;
+  line-height: 1.2;
+  font-weight: 650 !important;
+  text-shadow: none !important;
+}
+
+.workspace-expanded-shell > .section-head p {
+  margin: 2px 0 0;
+  color: var(--text-muted-readable);
+  font-size: 10px;
+  line-height: 1.2;
+}
+
+.workspace-expanded-shell .system-clock {
+  color: var(--text-muted-readable);
+}
+
+.workspace-expanded-shell .system-clock strong {
+  color: var(--text-secondary);
+}
+
+.workspace-expanded-shell :is(button, input, select, textarea, a):focus-visible,
+.rail :is(button, a):focus-visible {
+  outline: 2px solid var(--border-focus) !important;
+  outline-offset: 2px;
+  box-shadow: none !important;
+}
+
+.workspace-expanded-shell :is(input, select, textarea) {
+  border-color: var(--border-interactive) !important;
+}
+
+.workspace-expanded-shell :is(button, input, select, textarea) {
+  font-size: 11px !important;
+}
+
+.workspace-expanded-shell label {
+  font-size: 11px;
+}
+
+.workspace-expanded-shell small {
+  font-size: 10px !important;
+  line-height: 1.45;
+}
+
+.workspace-expanded-shell :is(p, small, .eyebrow) {
+  color: var(--text-muted-readable);
+}
+
+.workspace-expanded-shell:not(.workspace-videoEditor):not(.workspace-manualEditor) button {
+  min-height: 36px;
+}
+
+.workspace-expanded-shell :is(.cloud-health, .cloud-card, .service-requests, .prompt-scheme-list, .prompt-editor, .foundry-workbench > section, .twitter-intro, .twitter-composer-card, .twitter-history, .twitter-account-card, .content-ops-panel, .ui-control-hero, .ui-token-panel, .ui-live-preview) {
+  border-color: var(--border-subtle) !important;
+  background: var(--bg-surface) !important;
+  box-shadow: none !important;
+}
+
+.workspace-expanded-shell :is(.cloud-card, .service-kpis > div, .stat-card, .twitter-flow-card, .content-ops-empty) {
+  background: var(--bg-card) !important;
+}
+
+.workspace-expanded-shell :is(.button-primary, .primary, button[type="submit"]):not(.danger) {
+  border-color: transparent !important;
+}
+
+.workspace-monitor .cloud-monitor {
+  gap: 12px;
+}
+
+.workspace-monitor .cloud-health {
+  box-sizing: border-box;
+  min-height: 64px !important;
+  height: auto !important;
+  padding: 10px 12px !important;
+  overflow: hidden;
+}
+
+.workspace-monitor .cloud-health > svg {
+  width: 34px;
+  height: 34px;
+}
+
+.workspace-monitor .cloud-health > div {
+  gap: 1px;
+}
+
+.workspace-monitor .cloud-health::after {
+  content: none !important;
+}
+
+.workspace-monitor .cloud-health strong {
+  font-size: 15px;
+}
+
+.workspace-contentOperations {
+  height: 100vh;
+  padding-bottom: 0 !important;
+  overflow-y: hidden;
+}
+
+.workspace-contentOperations .content-operations-center {
+  box-sizing: border-box;
+  height: calc(100vh - 68px);
+}
+
+.workspace-contentOperations .content-ops-error {
+  position: sticky;
+  top: 8px;
+  left: auto;
+  z-index: 30;
+  width: auto;
+  margin: 0 0 8px;
+  transform: none;
+}
+
+@media (max-width: 1100px) and (min-width: 701px) {
+  .neural-shell { --shell-rail-expanded: 196px; }
+  .rail-expanded { padding-inline: 10px; }
+  .workspace-expanded-shell { padding-inline: 18px !important; }
+}
+
+@media (max-width: 700px) {
+  .shell-expanded .workspace,
+  .shell-compact .workspace {
+    width: 100%;
+    margin-left: 0 !important;
+  }
+}

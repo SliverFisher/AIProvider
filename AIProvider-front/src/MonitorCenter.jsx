@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ArrowsClockwise, ArrowsDownUp, CheckCircle, Clock, Coins, Cpu, Gauge, Gift, HardDrives, Pulse, Warning } from "@phosphor-icons/react";
 import "./MonitorCenter.css";
+import { readJsonResponse } from "./apiResponse";
 import "./MonitorCenterEnhancements.css";
 
 const API = "/api/monitor";
@@ -9,7 +10,7 @@ async function readSummary() {
   const paths = ["cloud-servers", "ai-overview", "ai-timeseries?range=24h", "aws-billing"];
   const values = await Promise.all(paths.map(async (path) => {
     const response = await fetch(`${API}/${path}`); if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    const json = await response.json(); if (json.code !== 200) throw new Error(json.message || "监控数据读取失败"); return json.data;
+    const json = await readJsonResponse(response, "监控服务响应异常"); if (json.code !== 200) throw new Error(json.message || "监控数据读取失败"); return json.data;
   }));
   return { cloudServers: values[0], overview: values[1], timeseries: values[2] || [], awsBilling: values[3] };
 }
@@ -57,7 +58,6 @@ export default function MonitorCenter() {
   const server = summary?.cloudServers?.[selectedCloud];
   const selectedCloudLabel = cloudLabel(selectedCloud, server);
   return <section className={`cloud-monitor ${loading ? "is-loading" : ""}`}>
-    <div className="monitor-kawaii-crown" aria-hidden="true"><i>✦</i><b>♡ SYSTEM GUARDIAN ♡</b><i>✦</i></div>
     <header className="cloud-toolbar">
       <div><span className="eyebrow">SERVICE · SERVER · {selectedCloudLabel.toUpperCase()}</span><p>服务请求、服务器资源、实时网速与本月流量</p></div>
       <div className="cloud-toolbar-actions">

@@ -25,11 +25,14 @@ describe("UI release gate", () => {
 
   it("keeps every primary workspace on semantic theme tokens", () => {
     const theme = read("SemanticTheme.css");
+    const tokens = read("uiTheme.js");
     ["video-editor-shell", "foundry-workbench", "system-settings-shell", "twitter-publisher", "content-operations-center", "prompt-scheme-list", "maid-panel", "universe-toolbar"].forEach((root) => {
       expect(theme, `${root} 未接入全局语义主题`).toContain(root);
     });
     const copy = read("UiControl.jsx");
     ["视频编辑", "我的女仆", "链上工具", "Twitter", "系统设置"].forEach((label) => expect(copy).toContain(label));
+    expect(tokens).toContain('"--text-muted-readable"');
+    expect(tokens).toContain('"--border-interactive"');
   });
 
   it("keeps mobile navigation reachable and touch-safe", () => {
@@ -44,8 +47,25 @@ describe("UI release gate", () => {
   it("does not nest the Prompt favorite action inside another button", () => {
     const prompt = read("PromptManager.jsx");
     expect(prompt).toContain('className={`prompt-scheme-row');
+    expect(prompt).toContain('className="prompt-scheme-select"');
+    expect(prompt).not.toContain('role="button"');
     expect(prompt).not.toContain('<span className={`prompt-default-star');
     expect(prompt).toContain('<button type="button" className={`prompt-default-star');
+  });
+
+  it("keeps the desktop shell labeled, grouped, and workshop-safe", () => {
+    const app = read("App.jsx");
+    const shell = read("DesktopShell.css");
+    expect(app).toContain('const NAV_GROUPS = [');
+    expect(app).toContain('aria-label="一级工作区"');
+    expect(app).toContain('aria-current={active ? "page" : undefined}');
+    expect(app).toContain('const compactShell = view === "workshop"');
+    expect(app).toContain('RELEASE_VERSION.frontend');
+    expect(app).toContain('RELEASE_VERSION.backend');
+    expect(shell).toContain('.rail-expanded .nav-button > span');
+    expect(shell).toContain('.workspace-expanded-shell');
+    expect(shell).not.toMatch(/\.workspace-workshop\s/);
+    expect(shell).not.toMatch(/\.comfy-local-workbench|\.workflow-panel/);
   });
 
   it("keeps Remote Codex reachable from the primary navigation", () => {
@@ -60,8 +80,11 @@ describe("UI release gate", () => {
 
   it("keeps content operation dialogs inside the desktop viewport", () => {
     const css = read("ContentOperationsCenter.css");
+    const shell = read("DesktopShell.css");
     expect(css).toMatch(/\.content-ops-dialog\{[^}]*max-height:\s*calc\(100vh\s*-\s*32px\)/);
     expect(css).toMatch(/\.content-ops-dialog\{[^}]*overflow-y:\s*auto/);
+    expect(shell).toMatch(/\.workspace-contentOperations \.content-operations-center\s*\{[^}]*height:\s*calc\(100vh\s*-\s*68px\)/);
+    expect(shell).toMatch(/\.workspace-contentOperations \.content-ops-error\s*\{[^}]*position:\s*sticky/);
   });
 
   it("keeps image-workshop detail actions grouped and keyboard accessible", () => {

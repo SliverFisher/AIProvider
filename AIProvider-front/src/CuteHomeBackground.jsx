@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from "react";
 import { CuteWorkshopArt } from "./CuteWorkshopCard";
 import unit09Frame from "./assets/cockpit-unit09-frame-v2.png";
 import unit09Pilot from "./assets/cockpit-unit09-pilot-v2.png";
-import { RELEASE_VERSION } from "./releaseVersion";
 import { createThreePlanetFlyby, THREE_FLYBY_BODIES } from "./threePlanetFlyby";
 import "./CuteHomeBackground.css";
 
@@ -347,11 +346,6 @@ export default function CuteHomeBackground({ onOpenWorkshop }) {
             aria-label={`切换至 ${item.label}`}
           ><i /><span>{String(index + 1).padStart(2, "0")}</span></button>)}
         </div>}
-      </div>
-
-      <div className="cockpit-release-version" aria-label={`前端版本 ${RELEASE_VERSION.frontend}，后端版本 ${RELEASE_VERSION.backend}`}>
-        <span><b>前端</b><i>{RELEASE_VERSION.frontend}</i></span>
-        <span><b>后端</b><i>{RELEASE_VERSION.backend}</i></span>
       </div>
 
       <button

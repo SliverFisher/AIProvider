@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Broadcast, CheckCircle, Clock, GearSix, Plus, Robot, Warning, XCircle } from "@phosphor-icons/react";
 import UiSearchField from "./UiSearchField";
+import { readJsonResponse } from "./apiResponse";
 import "./ContentOperationsCenter.css";
 
 const EMPTY = { settings: {}, counters: {}, accounts: [], collectionAccounts: [], sources: [], recentPublications: [] };
@@ -8,7 +9,7 @@ const tabs = [["overview","总览"],["accounts","账号"],["sources","采集源"
 
 async function request(path, options) {
   const response = await fetch(`/api/content-operations${path}`, { headers: { "Content-Type": "application/json" }, ...options });
-  const result = await response.json();
+  const result = await readJsonResponse(response, "内容运营服务响应异常");
   if (!response.ok || result.code !== 200) throw new Error(result.message || `请求失败 · ${response.status}`);
   return result.data;
 }
