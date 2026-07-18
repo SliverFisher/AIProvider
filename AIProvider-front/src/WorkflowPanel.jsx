@@ -28,7 +28,7 @@ const SELECT_OPTIONS = {
 };
 
 const BASIC_FIELDS = new Set(["sourceImage", "cutoutTarget", "positivePrompt", "negativePrompt", "loras", "width", "height", "checkpoint", "batchSize", "seed"]);
-const BASIC_FIELD_ORDER = ["sourceImage", "cutoutTarget", "positivePrompt", "negativePrompt", "loras", "width", "height", "checkpoint", "batchSize", "seed"];
+const BASIC_FIELD_ORDER = ["sourceImage", "cutoutTarget", "positivePrompt", "negativePrompt", "loras", "width", "height", "checkpoint", "seed", "batchSize"];
 const SIZE_OPTIONS = [
   ["1920x1080", "横屏 · 1K（1920 × 1080）"], ["3840x2160", "横屏 · 2K（3840 × 2160）"], ["7680x4320", "横屏 · 4K（7680 × 4320）"],
   ["1080x1920", "竖屏 · 1K（1080 × 1920）"], ["2160x3840", "竖屏 · 2K（2160 × 3840）"], ["4320x7680", "竖屏 · 4K（4320 × 7680）"],
@@ -57,7 +57,7 @@ function MainModelField({ fieldSpec, value, workflow, models, loading, onChange 
   const options = (models || []).map((model) => typeof model === "string" ? { name: model, displayName: model } : model).filter((model) => model?.name);
   if (current && !options.some((model) => model.name === current)) options.unshift({ name: current, displayName: current });
   const modelKind = fieldSpec?.input === "unet_name" ? "扩散模型" : "Checkpoint";
-  return <label className="workflow-panel__inline-field">{LABELS.checkpoint}<select aria-label={LABELS.checkpoint} value={current} disabled={loading || !options.length} title={`当前工作流使用 ${modelKind} 加载器`} onChange={(event) => onChange("checkpoint", event.target.value)}>
+  return <label className="workflow-panel__inline-field workflow-panel__main-model">{LABELS.checkpoint}<select aria-label={LABELS.checkpoint} value={current} disabled={loading || !options.length} title={`当前工作流使用 ${modelKind} 加载器`} onChange={(event) => onChange("checkpoint", event.target.value)}>
     {!options.length && <option value="">{loading ? "正在读取主模型…" : `未检测到可用 ${modelKind}`}</option>}
     {options.map((model) => <option key={model.name} value={model.name} title={model.name}>{model.displayName || model.name}</option>)}
   </select></label>;

@@ -102,18 +102,21 @@ describe("WorkflowPanel generation action", () => {
     expect(screen.queryByText("最终输出尺寸", { exact: true })).toBeNull();
   });
 
-  it("places the real workflow main-model selector between size and generation count", () => {
+  it("places the main model on its own row before the seed and generation-count row", () => {
     const change = vi.fn();
     render(<WorkflowPanel workflows={[{ id: "wf", name: "扩散模型工作流" }]} workflow={{ id: "wf", name: "扩散模型工作流", models: ["flux/default.safetensors"], capabilities: {} }}
-      fieldKeys={["batchSize", "checkpoint", "height", "width"]} fieldSpecs={{ width: {}, height: {}, batchSize: {}, checkpoint: { nodeType: "UNETLoader", input: "unet_name" } }}
-      values={{ width: 1920, height: 1080, batchSize: 1, checkpoint: "flux/default.safetensors" }} mainModels={[{ name: "flux/default.safetensors", displayName: "default · flux" }, { name: "flux/dev.safetensors", displayName: "dev · flux" }]}
+      fieldKeys={["batchSize", "checkpoint", "height", "seed", "width"]} fieldSpecs={{ width: {}, height: {}, batchSize: {}, seed: {}, checkpoint: { nodeType: "UNETLoader", input: "unet_name" } }}
+      values={{ width: 1920, height: 1080, batchSize: 1, seed: 123, randomSeed: true, checkpoint: "flux/default.safetensors" }} mainModels={[{ name: "flux/default.safetensors", displayName: "default · flux" }, { name: "flux/dev.safetensors", displayName: "dev · flux" }]}
       referenceFiles={{}} presets={[]} presetQuery="" disabled={{ blocked: false, busy: false }} loading={false}
       onWorkflowChange={vi.fn()} onFieldChange={change} onReference={vi.fn()} onPresetChange={vi.fn()} onGenerate={vi.fn()} />);
     const size = screen.getByRole("combobox", { name: "最终输出尺寸" }).closest(".workflow-panel__size");
     const model = screen.getByRole("combobox", { name: "主模型" });
+    const seed = screen.getByText("种子", { exact: true }).closest(".workflow-panel__seed");
     const count = screen.getByRole("spinbutton", { name: "生成数量" });
     expect(size.compareDocumentPosition(model) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(model.compareDocumentPosition(count) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(model.closest("label").classList.contains("workflow-panel__main-model")).toBe(true);
+    expect(model.compareDocumentPosition(seed) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(seed.compareDocumentPosition(count) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(model.title).toContain("扩散模型");
     expect(model.closest("details")).toBeNull();
     fireEvent.change(model, { target: { value: "flux/dev.safetensors" } });
