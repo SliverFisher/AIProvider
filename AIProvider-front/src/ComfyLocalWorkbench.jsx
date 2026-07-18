@@ -273,7 +273,8 @@ export default function ComfyLocalWorkbench({ mode = "workbench", active = true 
     [controlAction, setControlAction] = useState("");
   const [tasks, setTasks] = useState([]),
     [results, setResults] = useState([]),
-    [cancelingTask, setCancelingTask] = useState("");
+    [cancelingTask, setCancelingTask] = useState(""),
+    [cancelAllBusy, setCancelAllBusy] = useState(false);
   const [taskClock, setTaskClock] = useState(() => Date.now());
   const [taskDetail, setTaskDetail] = useState(null);
   const [batchOperation, setBatchOperation] = useState({ open: false, workflowId: "", busy: false });
@@ -357,6 +358,7 @@ export default function ComfyLocalWorkbench({ mode = "workbench", active = true 
     bridgeExitIntent = useRef(""),
     defaultPresetApplied = useRef(""),
     batchStopRequested = useRef(false),
+    cancelAllRequested = useRef(false),
     viewerTransform = useRef(null),
     viewerActionsRef = useRef({ requestDelete: null, route: null });
   gallerySourcesRef.current = gallerySources;
@@ -479,6 +481,32 @@ export default function ComfyLocalWorkbench({ mode = "workbench", active = true 
       setError(`取消任务失败：${e.message}`);
     } finally {
       setCancelingTask("");
+    }
+  };
+  const cancelAllTasks = async () => {
+    cancelAllRequested.current = true;
+    batchStopRequested.current = true;
+    setCancelAllBusy(true);
+    setError("");
+    try {
+      const response = await call("/api/tasks/cancel-all", { method: "POST" }, 10000);
+      const data = await readJson(response, "取消全部本机任务接口");
+      if (!response.ok || !data.success) throw new Error(data.message || `取消全部任务失败（HTTP ${response.status}）`);
+      const accepted = new Set((data.promptIds || []).map(String));
+      setTasks((current) => {
+        const next = current.map((item) => accepted.has(String(item.id)) && ["QUEUED", "RUNNING", "CANCEL_REQUESTED"].includes(item.state)
+          ? { ...item, state: "CANCEL_REQUESTED", bridgeState: "CANCEL_REQUESTED", reconciling: true }
+          : item);
+        localStorage.setItem("comfy_active_tasks", JSON.stringify(next.filter((item) => !item.external && item.state !== "SUCCEEDED")));
+        return next;
+      });
+      setNotice(data.total ? `Bridge 已接收全部 ${data.total} 个任务的取消请求` : "当前没有可取消的 Bridge 任务");
+    } catch (e) {
+      cancelAllRequested.current = false;
+      setError(`取消全部任务失败：${e.message}`);
+    } finally {
+      setCancelAllBusy(false);
+      if (!batchScheduling) cancelAllRequested.current = false;
     }
   };
 
@@ -1508,6 +1536,12 @@ export default function ComfyLocalWorkbench({ mode = "workbench", active = true 
             data.message ||
             `ComfyUI 提交失败（HTTP ${response.status}）`,
         );
+      if (cancelAllRequested.current) {
+        const cancellation = await call(`/api/tasks/${encodeURIComponent(data.promptId)}/cancel`, { method: "POST" }, 10000);
+        const cancellationData = await readJson(cancellation, "取消刚提交的本机任务接口");
+        if (!cancellation.ok || !cancellationData.success)
+          throw new Error(cancellationData.message || `取消任务失败（HTTP ${cancellation.status}）`);
+      }
       // Track if this generation was from a pending source image
       if (pendingSourceImageRef.current) {
         pendingGenerationSourceIds.current.add(String(data.promptId));
@@ -1572,6 +1606,7 @@ export default function ComfyLocalWorkbench({ mode = "workbench", active = true 
       setError(e.message);
     } finally {
       setBatchScheduling(false);
+      cancelAllRequested.current = false;
     }
   };
   const runGeneration = async (generationForm) => {
@@ -2528,6 +2563,7 @@ export default function ComfyLocalWorkbench({ mode = "workbench", active = true 
   const runningTaskCount = tasks.filter((task) => task.state === "RUNNING").length;
   const queuedTaskCount = tasks.filter((task) => task.state === "QUEUED").length;
   const failedTaskCount = tasks.filter((task) => task.state === "FAILED").length;
+  const cancelableTaskCount = tasks.filter((task) => ["QUEUED", "RUNNING", "CANCEL_REQUESTED"].includes(task.state)).length;
   const activeTask = sortedTasks[0] || null;
   const activeTaskWorkflowName = activeTask
     ? activeTask.workflowName || workflows.find((workflow) => workflow.id === (activeTask.workflowId || activeTask.form?.workflowId))?.name || (activeTask.external ? "外部 ComfyUI 工作流" : "当前工作流")
@@ -2784,7 +2820,7 @@ export default function ComfyLocalWorkbench({ mode = "workbench", active = true 
           </div>
           {tasks.length > 0 && (
             <div className="task-queue-area">
-              <div className="task-queue-overview"><strong>当前 {tasks.length} 个任务</strong><span>执行中 {runningTaskCount}</span><span>排队 {queuedTaskCount}</span>{failedTaskCount > 0 && <span>失败 {failedTaskCount}</span>}{batchProgress && <span>Bridge 已接收 {batchProgress.submitted} / {batchProgress.total}</span>}{batchScheduling && <button type="button" onClick={() => { batchStopRequested.current = true; }}>停止加入 Bridge</button>}</div>
+              <div className="task-queue-overview"><strong>当前 {tasks.length} 个任务</strong><span>执行中 {runningTaskCount}</span><span>排队 {queuedTaskCount}</span>{failedTaskCount > 0 && <span>失败 {failedTaskCount}</span>}{batchProgress && <span>Bridge 已接收 {batchProgress.submitted} / {batchProgress.total}</span>}{batchScheduling && <button type="button" onClick={() => { batchStopRequested.current = true; }}>停止加入 Bridge</button>}{cancelableTaskCount > 0 && <button type="button" className="task-cancel-all" disabled={cancelAllBusy} onClick={cancelAllTasks}>{cancelAllBusy ? "取消中…" : `取消全部 ${cancelableTaskCount}`}</button>}</div>
               <div className="task-queue-strip">
               {sortedTasks.map((task) => (
                 <article

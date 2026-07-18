@@ -99,6 +99,13 @@ describe("ComfyUIAgent durable generation ownership", () => {
     expect(source).not.toContain('await RemoveBridgeQueuedGeneration(item.PromptId)');
   });
 
+  it("persists one asynchronous cancellation request for every active Bridge task", () => {
+    const source = readFileSync(sourcePath, "utf8");
+    expect(source).toContain('app.MapPost("/api/tasks/cancel-all"');
+    expect(source).toContain("CancelAllBridgeGenerations");
+    expect(source).toContain('item.State = "CANCEL_REQUESTED"');
+  });
+
   it("rejects a Krea2 diffusion model before queueing when the workflow has a non-Krea text encoder", () => {
     const source = readFileSync(sourcePath, "utf8");
     expect(source).toContain("selectedKrea2Model && !usesKrea2TextEncoder");

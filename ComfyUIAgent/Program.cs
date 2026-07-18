@@ -270,6 +270,18 @@ app.MapPost("/api/tasks/{promptId}/cancel", async (string promptId) => {
     return Results.Json(new { success = true, promptId, state = "CANCEL_REQUESTED", cancelled = false, cancellationRequested = true, queueOwner = "BRIDGE" }, statusCode: StatusCodes.Status202Accepted);
 }).DisableAntiforgery();
 
+app.MapPost("/api/tasks/cancel-all", async () => {
+    var result = await CancelAllBridgeGenerations();
+    return Results.Json(new {
+        success = true,
+        total = result.Total,
+        cancelled = result.Cancelled,
+        cancellationRequested = result.CancellationRequested,
+        promptIds = result.PromptIds,
+        queueOwner = "BRIDGE"
+    }, statusCode: StatusCodes.Status202Accepted);
+}).DisableAntiforgery();
+
 app.MapGet("/api/tasks/{promptId}/state", async (string promptId, IHttpClientFactory factory) => {
     promptId = (promptId ?? "").Trim();
     if (promptId.Length == 0 || promptId.Length > 200)
@@ -959,6 +971,33 @@ async Task<bool> CancelPendingBridgeGeneration(string promptId) {
         await WriteBridgeGenerationQueue();
         return true;
     } finally { generationQueueLock.Release(); }
+}
+
+async Task<(int Total, int Cancelled, int CancellationRequested, string[] PromptIds)> CancelAllBridgeGenerations() {
+    var cancelled = 0;
+    var cancellationRequested = 0;
+    string[] promptIds;
+    await generationQueueLock.WaitAsync();
+    try {
+        var active = generationQueue
+            .Where(entry => entry.State is "PENDING" or "SUBMITTED" or "QUEUED" or "RUNNING" or "CANCEL_REQUESTED")
+            .ToArray();
+        promptIds = active.Select(entry => entry.PromptId).ToArray();
+        foreach (var item in active) {
+            if (item.State == "PENDING") {
+                item.State = "CANCELLED";
+                item.CompletedAt = DateTimeOffset.Now;
+                item.Error = null;
+                cancelled += 1;
+            } else {
+                item.State = "CANCEL_REQUESTED";
+                cancellationRequested += 1;
+            }
+        }
+        if (active.Length > 0) await WriteBridgeGenerationQueue();
+    } finally { generationQueueLock.Release(); }
+    if (cancellationRequested > 0) generationQueueSignal.Release();
+    return (promptIds.Length, cancelled, cancellationRequested, promptIds);
 }
 
 async Task SetBridgeGenerationState(string promptId, string state, string? error = null) {

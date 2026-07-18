@@ -73,6 +73,7 @@ describe("Comfy image generation flow", () => {
   let presetIsDefault;
   let presetPositivePrompt;
   let cancelledTask;
+  let cancelAllRequests;
   let multiImageGallery;
   let submittedWorkflow;
   let generateRequests;
@@ -102,6 +103,7 @@ describe("Comfy image generation flow", () => {
     presetIsDefault = false;
     presetPositivePrompt = "preset prompt";
     cancelledTask = null;
+    cancelAllRequests = 0;
     multiImageGallery = false;
     submittedWorkflow = null;
     generateRequests = 0;
@@ -150,6 +152,10 @@ describe("Comfy image generation flow", () => {
       if (url.includes("/api/tasks/") && url.endsWith("/cancel") && options.method === "POST") {
         cancelledTask = decodeURIComponent(url.split("/api/tasks/")[1].replace("/cancel", ""));
         return json({ success: true, cancelled: true, promptId: cancelledTask });
+      }
+      if (url.endsWith("/api/tasks/cancel-all") && options.method === "POST") {
+        cancelAllRequests += 1;
+        return json({ success: true, total: 1, cancelled: 0, cancellationRequested: 1, promptIds: [PROMPT_ID] }, 202);
       }
       if (url.endsWith("/api/gallery/delete") && options.method === "POST") {
         deletedPaths.push(...JSON.parse(options.body).paths);
@@ -664,6 +670,17 @@ describe("Comfy image generation flow", () => {
 
     fireEvent.keyDown(window, { key: "Delete" });
     await waitFor(() => expect(deletedPaths).toEqual(["aimaid/done.png"]));
+  });
+
+  it("asks Bridge to cancel every active generation from one native button", async () => {
+    render(<ComfyLocalWorkbench />);
+    const generate = await screen.findByRole("button", { name: "开始生成" });
+    await waitFor(() => expect(generate.disabled).toBe(false));
+    fireEvent.click(generate);
+    const cancelAll = await screen.findByRole("button", { name: "取消全部 1" });
+    fireEvent.click(cancelAll);
+    await waitFor(() => expect(cancelAllRequests).toBe(1));
+    expect(screen.getByText("Bridge 已接收全部 1 个任务的取消请求")).toBeTruthy();
   });
 
   it("uses End to send the current local image to pending without a dialog", async () => {
