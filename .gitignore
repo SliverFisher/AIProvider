@@ -16,6 +16,9 @@ AIProvider-front/node_modules/
 AIProvider-front/ui-audit-*/
 AIProvider-front/unit09-layer-preview.png
 AIProvider-front/design-qa.md
+/design-qa.md
+/design-qa-*.jpg
+/implementation-*.png
 CCXTGateway/node_modules/
 CCXTGateway/*.log
 AIProvider-front/*.log

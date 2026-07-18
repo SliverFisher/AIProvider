@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applySchemeToWorkflow, calculateComfyProgress, createComfyProgressPlan, createWorkflowForm, describeComfyProgress, FALLBACK_FORM, findFinalOutput, getWorkflowFieldKeys, getWorkflowRevision, normalizeFolder, refreshWorkflowForm } from "./workbench";
+import { applySchemeToWorkflow, calculateComfyProgress, createComfyProgressPlan, createWorkflowForm, describeComfyProgress, FALLBACK_FORM, findFinalOutput, getWorkflowFieldKeys, getWorkflowRevision, hasPromptSchemeContent, normalizeFolder, refreshWorkflowForm } from "./workbench";
 
 describe("workbench workflow state", () => {
   it("rebuilds state from the selected workflow instead of retaining the previous workflow", () => {
@@ -41,6 +41,12 @@ describe("workbench workflow state", () => {
       { positivePrompt: "" },
       workflow,
     )).toEqual({ workflowId: "futa01", positivePrompt: "" });
+  });
+
+  it("does not auto-apply an empty default Prompt scheme over workflow defaults", () => {
+    expect(hasPromptSchemeContent({ positivePrompt: "", negativePrompt: " " })).toBe(false);
+    expect(hasPromptSchemeContent({ positivePrompt: "portrait", negativePrompt: "" })).toBe(true);
+    expect(hasPromptSchemeContent({ positivePrompt: "", negativePrompt: "blurry" })).toBe(true);
   });
 
   it("keeps edits when the JSON is unchanged and reloads defaults when modifiedAt changes", () => {

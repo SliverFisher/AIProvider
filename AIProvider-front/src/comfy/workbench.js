@@ -74,6 +74,11 @@ export function applySchemeToWorkflow(form, scheme, workflow) {
   return { ...form, ...prompts, workflowId: workflow.id };
 }
 
+export function hasPromptSchemeContent(scheme) {
+  return [scheme?.positivePrompt, scheme?.negativePrompt]
+    .some((value) => String(value ?? "").trim().length > 0);
+}
+
 export function findFinalOutput(item, preferredNodeId) {
   if (!item?.outputs) return null;
   if (preferredNodeId && item.outputs[preferredNodeId]?.images?.length) return item.outputs[preferredNodeId];

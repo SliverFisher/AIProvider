@@ -25,7 +25,7 @@ import "./ComfyLocalWorkbench.css";
 import WorkflowPanel from "./WorkflowPanel";
 import DynamicShowcase from "./DynamicShowcase";
 import { generateId } from "./utils/generateId";
-import { applySchemeToWorkflow, createComfyProgressPlan, createWorkflowForm, describeComfyProgress, FALLBACK_FORM, findFinalOutput, getWorkflowFieldKeys, getWorkflowRevision, refreshWorkflowForm } from "./comfy/workbench";
+import { applySchemeToWorkflow, createComfyProgressPlan, createWorkflowForm, describeComfyProgress, FALLBACK_FORM, findFinalOutput, getWorkflowFieldKeys, getWorkflowRevision, hasPromptSchemeContent, refreshWorkflowForm } from "./comfy/workbench";
 import { buildPromptCategories, extractNegativeExtra, extractPositiveExtra, matchSelectedOptionsFromPrompt, normalizePrompt } from "./promptComposer";
 import { buildLuckyPrompts } from "./luckyPrompt";
 
@@ -664,6 +664,7 @@ export default function ComfyLocalWorkbench({ mode = "workbench", active = true 
     const applicationKey = `${preset.id}:${workflow.id}`;
     if (defaultPresetApplied.current === applicationKey) return;
     defaultPresetApplied.current = applicationKey;
+    if (!hasPromptSchemeContent(preset)) return;
     setForm((current) => applySchemeToWorkflow(current, preset, workflow));
     setPresetQuery(String(preset.id));
     setSelectedPresetId(String(preset.id));
