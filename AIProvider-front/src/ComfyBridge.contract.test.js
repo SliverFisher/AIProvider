@@ -8,13 +8,17 @@ const settingsPath = fileURLToPath(new URL(
 ));
 const bridgeDescribe = existsSync(settingsPath) ? describe : describe.skip;
 const bridgeBaseUrl = "http://127.0.0.1:32145";
+const bridgeSettings = existsSync(settingsPath)
+  ? JSON.parse(readFileSync(settingsPath, "utf8"))
+  : null;
 
 const imagePaths = (payload) => (payload.items || []).flatMap((item) =>
   (item.images || []).map((image) => image.path).filter(Boolean));
 
 bridgeDescribe("ComfyUIAgent bridge contract", () => {
-  const settings = JSON.parse(readFileSync(settingsPath, "utf8"));
-  const headers = { "X-Local-Token": settings.LocalToken };
+  const headers = bridgeSettings
+    ? { "X-Local-Token": bridgeSettings.LocalToken }
+    : {};
 
   const bridgeFetch = async (path, options = {}) => {
     const response = await fetch(`${bridgeBaseUrl}${path}`, {
