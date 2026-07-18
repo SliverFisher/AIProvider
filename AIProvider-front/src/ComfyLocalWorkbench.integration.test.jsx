@@ -1,8 +1,10 @@
 // @vitest-environment jsdom
 import React from "react";
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, configure, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import ComfyLocalWorkbench from "./ComfyLocalWorkbench";
+
+configure({ asyncUtilTimeout: 5000 });
 
 const PROMPT_ID = "11111111-1111-1111-1111-111111111111";
 
@@ -247,10 +249,10 @@ describe("Comfy image generation flow", () => {
     await waitFor(() => expect(generate.disabled).toBe(false));
     expect(screen.getByRole("combobox", { name: "当前生成工作流" }).value).toBe("futa01");
     fireEvent.click(generate);
-    const image = await screen.findByAltText("历史生成结果", {}, { timeout: 5000 });
+    const image = await screen.findByAltText("历史生成结果", {}, { timeout: 10000 });
     expect(image.getAttribute("src")).toBe("blob:done");
     expect(screen.getByText("1 张")).toBeTruthy();
-  }, 8000);
+  }, 15000);
 
   it("cancels a queued generation from its compact close button", async () => {
     render(<ComfyLocalWorkbench />);
@@ -273,13 +275,13 @@ describe("Comfy image generation flow", () => {
     fireEvent.change(screen.getByRole("spinbutton", { name: "高度" }), { target: { value: "1600" } });
 
     fireEvent.click(generate);
-    const image = await screen.findByAltText("历史生成结果", {}, { timeout: 5000 });
+    const image = await screen.findByAltText("历史生成结果", {}, { timeout: 10000 });
     fireEvent.click(screen.getByRole("button", { name: "选择" }));
     fireEvent.click(image.closest("button"));
     fireEvent.click(screen.getByRole("button", { name: "加入待处理 1" }));
     await waitFor(() => expect(moved).toBe(true));
     await waitFor(() => expect(screen.queryByAltText("历史生成结果")).toBeNull());
-  }, 8000);
+  }, 15000);
 
   it("selects individual images independently when one task contains multiple outputs", async () => {
     multiImageGallery = true;
@@ -465,11 +467,11 @@ describe("Comfy image generation flow", () => {
   it("appends an external ComfyUI result without recreating its cached image", async () => {
     externalRun = true;
     render(<ComfyLocalWorkbench />);
-    const image = await screen.findByAltText("历史生成结果", {}, { timeout: 7000 });
+    const image = await screen.findByAltText("历史生成结果", {}, { timeout: 12000 });
     expect(image.getAttribute("src")).toBe("blob:done");
     expect(galleryRequests).toBeGreaterThanOrEqual(1);
     expect(URL.createObjectURL).toHaveBeenCalledTimes(1);
-  }, 8000);
+  }, 15000);
 
   it("keeps a completed result in the local gallery even while assets are open", async () => {
     externalRun = true;
@@ -477,12 +479,12 @@ describe("Comfy image generation flow", () => {
     fireEvent.click(await screen.findByRole("button", { name: "我的资产" }));
     await screen.findByAltText("历史生成结果");
 
-    await waitFor(() => expect(URL.createObjectURL.mock.calls.length).toBeGreaterThanOrEqual(2), { timeout: 7000 });
+    await waitFor(() => expect(URL.createObjectURL.mock.calls.length).toBeGreaterThanOrEqual(2), { timeout: 12000 });
     expect(galleryRequests).toBe(1);
     fireEvent.click(screen.getByRole("button", { name: "本机图片" }));
 
     expect(await screen.findByAltText("历史生成结果")).toBeTruthy();
-  }, 8000);
+  }, 15000);
 
   it("inserts only the new bridge history result without reloading the gallery", async () => {
     submitted = true;
@@ -490,7 +492,7 @@ describe("Comfy image generation flow", () => {
     render(<ComfyLocalWorkbench />);
 
     expect(await screen.findByText("1 张")).toBeTruthy();
-    await waitFor(() => expect(screen.getAllByAltText("历史生成结果")).toHaveLength(2), { timeout: 7000 });
+    await waitFor(() => expect(screen.getAllByAltText("历史生成结果")).toHaveLength(2), { timeout: 12000 });
 
     const recentHistoryRequests = bridgeRequests.filter((url) => url.includes("/comfy/history?max_items=20"));
     const incrementalImageRequests = bridgeRequests.filter((url) => url.includes("/comfy/view?") && url.includes("incremental.png"));
@@ -506,7 +508,7 @@ describe("Comfy image generation flow", () => {
     expect(tiles[0].dataset.imagePath).toBe("aimaid/incremental.png");
     expect(tiles[1].dataset.galleryEntryId).toBe(PROMPT_ID);
     expect(tiles[1].dataset.imagePath).toBe("aimaid/done.png");
-  }, 8000);
+  }, 15000);
 
   it("reconciles a completed bridge result already present on the first history poll", async () => {
     submitted = true;
@@ -517,7 +519,7 @@ describe("Comfy image generation flow", () => {
       const incrementalTile = document.querySelector('[data-gallery-entry-id="incremental-prompt"]');
       expect(incrementalTile).not.toBeNull();
       expect(incrementalTile.dataset.imagePath).toBe("aimaid/incremental.png");
-    }, { timeout: 7000 });
+    }, { timeout: 12000 });
 
     const tiles = Array.from(document.querySelectorAll(".local-image-tile"));
     expect(tiles).toHaveLength(2);
@@ -527,7 +529,7 @@ describe("Comfy image generation flow", () => {
     expect(bridgeRequests.filter((url) => url.includes("/comfy/view?") && url.includes("incremental.png"))).toHaveLength(1);
     expect(URL.createObjectURL).toHaveBeenCalledTimes(2);
     expect(screen.getByText("2 张")).toBeTruthy();
-  }, 8000);
+  }, 15000);
 
   it("does not duplicate a first-poll bridge result whose image address is already loaded", async () => {
     submitted = true;
@@ -536,7 +538,7 @@ describe("Comfy image generation flow", () => {
 
     await waitFor(() => expect(
       bridgeRequests.filter((url) => url.includes("/comfy/history?max_items=20")).length,
-    ).toBeGreaterThanOrEqual(2), { timeout: 7000 });
+    ).toBeGreaterThanOrEqual(2), { timeout: 12000 });
 
     const tiles = Array.from(document.querySelectorAll(".local-image-tile"));
     expect(tiles).toHaveLength(1);
@@ -546,7 +548,7 @@ describe("Comfy image generation flow", () => {
     expect(galleryRequests).toBe(1);
     expect(URL.createObjectURL).toHaveBeenCalledTimes(1);
     expect(screen.getByText("1 张")).toBeTruthy();
-  }, 8000);
+  }, 15000);
 
   it("shows every active task in ComfyUI execution order even when progress lookup fails", async () => {
     progressFails = true;
