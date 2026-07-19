@@ -1,9 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowClockwise, CheckCircle, Desktop, DotsThree, ImageSquare, Star, Trash, UploadSimple, X } from "@phosphor-icons/react";
+import { ArrowClockwise, ArrowsLeftRight, ArrowCounterClockwise, CaretLeft, CaretRight, CheckCircle, Desktop, DotsThree, ImageSquare, MagnifyingGlassMinus, MagnifyingGlassPlus, Star, Trash, UploadSimple, X } from "@phosphor-icons/react";
+import { TransformComponent, TransformWrapper } from "react-zoom-pan-pinch";
 import UiSearchField from "./UiSearchField";
 import UiToast from "./UiToast";
 import { readJsonResponse } from "./apiResponse";
 import "./FavoriteMediaLibrary.css";
+
+const VIEWER_ZOOM_STEP = 0.2;
 
 const BRIDGE = "http://127.0.0.1:32145";
 const formatSize = (value) => {
@@ -55,7 +58,9 @@ export default function FavoriteMediaLibrary() {
   const [selected, setSelected] = useState(() => new Set());
   const [selectionMode, setSelectionMode] = useState(false);
   const [uploading, setUploading] = useState({ active: false, done: 0, total: 0 });
-  const [preview, setPreview] = useState(null);
+  const [previewIndex, setPreviewIndex] = useState(null);
+  const [viewerOrientation, setViewerOrientation] = useState({ rotation: 0, mirrored: false });
+  const viewerTransform = useRef(null);
   const [menu, setMenu] = useState(null);
   const [deleteIds, setDeleteIds] = useState([]);
   const [wallpaper, setWallpaper] = useState({ open: false, item: null, monitors: [], selectedId: "", fitMode: "smart", loading: false, token: "" });
@@ -70,6 +75,21 @@ export default function FavoriteMediaLibrary() {
     } catch (exception) { setError(exception.message); setState("error"); }
   };
   useEffect(() => { load(); }, []);
+  const openPreview = (index) => {
+    setViewerOrientation({ rotation: 0, mirrored: false });
+    setPreviewIndex(index);
+  };
+  const closePreview = () => {
+    setPreviewIndex(null);
+    viewerTransform.current?.resetTransform(0, "easeOut");
+  };
+  const navigatePreview = (delta) => {
+    if (previewIndex === null || !filtered.length) return;
+    const next = (previewIndex + delta + filtered.length) % filtered.length;
+    setViewerOrientation({ rotation: 0, mirrored: false });
+    viewerTransform.current?.resetTransform(140, "easeOut");
+    setPreviewIndex(next);
+  };
   useEffect(() => {
     const close = () => setMenu(null);
     window.addEventListener("click", close);
@@ -155,8 +175,17 @@ export default function FavoriteMediaLibrary() {
 
   return <section className="favorite-library">
     <div className="favorite-hero">
-      <div><span><Star weight="fill" /> PRIVATE MEDIA LIBRARY</span><h2>把真正喜欢的画面，留在自己的空间里。</h2><p>原图保存在服务器。当前开放图片，视频媒体能力已经预留。</p></div>
-      <div className="favorite-hero-stat"><strong>{items.length}</strong><span>张服务器原图</span><small>{items.reduce((sum, item) => sum + Number(item.fileSize || 0), 0) ? formatSize(items.reduce((sum, item) => sum + Number(item.fileSize || 0), 0)) : "等待第一张图片"}</small></div>
+      <div className="favorite-hero-text">
+        <div className="favorite-hero-badge"><Star weight="fill" /></div>
+        <div>
+          <span className="favorite-hero-eyebrow"><Star weight="fill" /> Private Media Library</span>
+          <h2>把真正喜欢的画面，留在自己的空间里。</h2>
+          <p>原图保存在服务器。当前开放图片，视频媒体能力已经预留。</p>
+        </div>
+      </div>
+      <div className="favorite-hero-stats">
+        <div className="favorite-hero-stat"><strong>{items.length}</strong><span>张服务器原图</span><small>{items.reduce((sum, item) => sum + Number(item.fileSize || 0), 0) ? formatSize(items.reduce((sum, item) => sum + Number(item.fileSize || 0), 0)) : "等待第一张图片"}</small></div>
+      </div>
     </div>
 
     <div className="favorite-toolbar">
@@ -176,8 +205,8 @@ export default function FavoriteMediaLibrary() {
     <UiToast message={error || notice} tone={error ? "error" : "success"} onDismiss={() => { setError(""); setNotice(""); }} />
     {state === "loading" && !items.length ? <div className="favorite-empty"><Star /><strong>正在打开你的私人画廊…</strong></div>
       : !filtered.length ? <div className="favorite-empty"><ImageSquare /><strong>{query ? "没有找到匹配的图片" : "这里还没有喜欢的画面"}</strong><span>{query ? "换一个关键词试试" : "可以直接上传，或从图像工坊的“我的资产”批量转入"}</span>{!query && <button type="button" className="primary" onClick={() => inputRef.current?.click()}><UploadSimple />上传第一张图片</button>}</div>
-        : <div className="favorite-grid">{filtered.map((item) => <article className="favorite-card" key={item.id} data-selected={selected.has(item.id)}>
-          <button type="button" className="favorite-image" aria-label={`预览 ${item.title}`} onClick={() => selectionMode ? toggle(item.id) : setPreview(item)} onContextMenu={(event) => { event.preventDefault(); setMenu({ item, x: Math.min(event.clientX, window.innerWidth - 210), y: Math.min(event.clientY, window.innerHeight - 150) }); }}><img src={item.contentUrl} alt="" loading="lazy" /></button>
+        : <div className="favorite-grid">{filtered.map((item, index) => <article className="favorite-card" key={item.id} data-selected={selected.has(item.id)}>
+          <button type="button" className="favorite-image" aria-label={`预览 ${item.title}`} onClick={() => selectionMode ? toggle(item.id) : openPreview(index)} onContextMenu={(event) => { event.preventDefault(); setMenu({ item, x: Math.min(event.clientX, window.innerWidth - 210), y: Math.min(event.clientY, window.innerHeight - 150) }); }}><img src={item.contentUrl} alt="" loading="lazy" /></button>
           <button type="button" className="favorite-select" aria-label={`${selected.has(item.id) ? "取消选择" : "选择"} ${item.title}`} onClick={() => { setSelectionMode(true); toggle(item.id); }}><i>{selected.has(item.id) ? "✓" : ""}</i></button>
           <button type="button" className="favorite-more" aria-label={`${item.title} 更多操作`} onClick={(event) => { event.stopPropagation(); const box = event.currentTarget.getBoundingClientRect(); setMenu({ item, x: Math.min(box.right - 190, window.innerWidth - 210), y: Math.min(box.bottom + 6, window.innerHeight - 150) }); }}><DotsThree weight="bold" /></button>
           <div className="favorite-card-meta"><strong>{item.title}</strong><span>{formatDate(item.createdAt)} · {formatSize(item.fileSize)}</span></div>
@@ -185,10 +214,75 @@ export default function FavoriteMediaLibrary() {
 
     {menu && <div className="favorite-context-menu" style={{ left: menu.x, top: menu.y }}>
       <button type="button" onClick={() => openWallpaper(menu.item)}><Desktop />应用为壁纸</button>
-      <button type="button" onClick={() => { setMenu(null); setPreview(menu.item); }}><ImageSquare />查看原图</button>
+      <button type="button" onClick={() => { const targetIndex = filtered.findIndex((entry) => entry.id === menu.item.id); setMenu(null); if (targetIndex >= 0) openPreview(targetIndex); }}><ImageSquare />查看原图</button>
       <button type="button" className="danger" onClick={() => { setMenu(null); setDeleteIds([menu.item.id]); }}><Trash />从我的最爱移除</button>
     </div>}
-    {preview && <div className="favorite-preview" role="dialog" aria-modal="true" aria-label={`预览 ${preview.title}`}><div><header><span><strong>{preview.title}</strong><small>{preview.originalFileName} · {formatSize(preview.fileSize)}</small></span><button type="button" aria-label="关闭预览" onClick={() => setPreview(null)}><X /></button></header><img src={preview.contentUrl} alt={preview.title} /><footer><button type="button" onClick={() => openWallpaper(preview)}><Desktop />选择显示器并应用为壁纸</button></footer></div></div>}
+    {previewIndex !== null && filtered[previewIndex] && <div className="favorite-preview" role="dialog" aria-modal="true" aria-label={`预览 ${filtered[previewIndex].title}`} onMouseDown={(event) => event.target === event.currentTarget && closePreview()}>
+      <div className="favorite-preview-panel">
+        <header className="favorite-preview-header">
+          <div className="favorite-preview-tools">
+            <button type="button" aria-label="缩小图片" title="缩小 (每次 20%)" onClick={() => viewerTransform.current?.zoomOut(VIEWER_ZOOM_STEP, 120, "easeOut")}><MagnifyingGlassMinus /></button>
+            <button type="button" aria-label="恢复原始大小和位置" title="恢复原位" onClick={() => viewerTransform.current?.resetTransform(140, "easeOut")}><ArrowCounterClockwise /></button>
+            <button type="button" aria-label="放大图片" title="放大 (每次 20%)" onClick={() => viewerTransform.current?.zoomIn(VIEWER_ZOOM_STEP, 120, "easeOut")}><MagnifyingGlassPlus /></button>
+            <button type="button" aria-label="顺时针旋转图片 90 度" title="顺时针旋转 90°" onClick={() => setViewerOrientation((current) => ({ ...current, rotation: (current.rotation + 90) % 360 }))}><ArrowClockwise /></button>
+            <button type="button" aria-pressed={viewerOrientation.mirrored} aria-label="水平镜像图片" title="水平镜像" onClick={() => setViewerOrientation((current) => ({ ...current, mirrored: !current.mirrored }))}><ArrowsLeftRight /></button>
+            <small>滚轮缩放 · 双击切换 · 每次步进 20%</small>
+          </div>
+          <div className="favorite-preview-title" title={filtered[previewIndex].originalFileName || filtered[previewIndex].title}>
+            <strong>{filtered[previewIndex].title}</strong>
+            <span>{previewIndex + 1} / {filtered.length}</span>
+            <small>{filtered[previewIndex].originalFileName} · {formatSize(filtered[previewIndex].fileSize)} · {formatDate(filtered[previewIndex].createdAt)}</small>
+          </div>
+          <div className="favorite-preview-actions">
+            <button type="button" aria-label="上一张图片" title="上一张" onClick={() => navigatePreview(-1)} disabled={filtered.length <= 1}><CaretLeft /></button>
+            <button type="button" aria-label="下一张图片" title="下一张" onClick={() => navigatePreview(1)} disabled={filtered.length <= 1}><CaretRight /></button>
+            <button type="button" aria-label="应用为壁纸" title="应用为壁纸" onClick={() => openWallpaper(filtered[previewIndex])}><Desktop /></button>
+            <button type="button" aria-label="关闭预览" title="关闭预览" onClick={closePreview}><X /></button>
+          </div>
+        </header>
+        <div className="favorite-preview-stage">
+          <TransformWrapper
+            ref={viewerTransform}
+            initialScale={1}
+            minScale={1}
+            maxScale={8}
+            centerOnInit
+            centerZoomedOut
+            limitToBounds
+            disablePadding
+            smooth={false}
+            wheel={{ step: VIEWER_ZOOM_STEP }}
+            doubleClick={{ mode: "toggle", step: 1, animationTime: 180, animationType: "easeOut" }}
+            zoomAnimation={{ animationTime: 160, animationType: "easeOut" }}
+            panning={{ velocityDisabled: false }}
+          >
+            {() => (
+              <TransformComponent wrapperClass="favorite-preview-zoom" contentClass="favorite-preview-zoom-content">
+                <img
+                  className={`favorite-preview-image ${viewerOrientation.rotation % 180 ? "is-quarter-turn" : ""}`}
+                  style={{ transform: `rotate(${viewerOrientation.rotation}deg) scaleX(${viewerOrientation.mirrored ? -1 : 1})` }}
+                  src={filtered[previewIndex].contentUrl}
+                  alt={filtered[previewIndex].title}
+                  draggable={false}
+                />
+              </TransformComponent>
+            )}
+          </TransformWrapper>
+          {filtered.length > 1 && <>
+            <button type="button" className="favorite-preview-nav prev" aria-label="上一张图片" onClick={() => navigatePreview(-1)}><CaretLeft /></button>
+            <button type="button" className="favorite-preview-nav next" aria-label="下一张图片" onClick={() => navigatePreview(1)}><CaretRight /></button>
+          </>}
+        </div>
+        <footer className="favorite-preview-footer">
+          <span><strong>{filtered[previewIndex].width || "?"} × {filtered[previewIndex].height || "?"}</strong><small>原始分辨率</small></span>
+          <span><strong>{filtered[previewIndex].sourcePlatform || "本地上传"}</strong><small>来源</small></span>
+          <span><strong>{filtered[previewIndex].prompt ? "已记录" : "无"}</strong><small>Prompt</small></span>
+          <div className="favorite-preview-footer-actions">
+            <button type="button" onClick={() => openWallpaper(filtered[previewIndex])}><Desktop />选择显示器并应用为壁纸</button>
+          </div>
+        </footer>
+      </div>
+    </div>}
     {!!deleteIds.length && <div className="favorite-confirm" role="dialog" aria-modal="true" aria-label="确认移除"><div><Star weight="fill" /><h3>从我的最爱移除？</h3><p>将同时删除服务器上的 {deleteIds.length} 个原图文件，此操作不可恢复。</p><footer><button type="button" onClick={() => setDeleteIds([])}>取消</button><button type="button" className="danger" onClick={remove}>确认移除</button></footer></div></div>}
     {wallpaper.open && <div className="favorite-confirm wallpaper-dialog" role="dialog" aria-modal="true" aria-label="选择壁纸显示器"><div>
       <Desktop /><h3>应用到哪一台显示器？</h3><p>默认会判断图片与屏幕方向，只替换所选屏幕。</p>
