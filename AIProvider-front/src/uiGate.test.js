@@ -49,6 +49,9 @@ describe("UI release gate", () => {
     expect(page).toContain('/preview/');
     expect(page).toContain('aria-label="中转文本"');
     expect(page).toContain('type="submit"');
+    expect(page).toContain('import UiToast from "./UiToast"');
+    expect(page).toContain("<UiToast message={error || notice}");
+    expect(page).not.toContain("file-transfer-message");
     expect(page).not.toMatch(/<div[^>]+onClick=/);
     expect(css).toContain("var(--bg-surface)");
     expect(css).toMatch(/\.file-transfer-page\{[^}]*min-width:0[^}]*overflow:hidden/);
@@ -56,6 +59,18 @@ describe("UI release gate", () => {
     expect(css).not.toMatch(/td:first-child\{[^}]*display:flex/);
     expect(css).toMatch(/\.file-transfer-file-cell\{[^}]*display:flex/);
     expect(css).toMatch(/\.file-transfer-text-card\{[^}]*display:grid[^}]*align-self:start/);
+  });
+
+  it("routes transient operation feedback through the unified compact toast", () => {
+    const toast = read("UiToast.jsx");
+    const toastCss = read("UiToast.css");
+    const customToastFiles = jsxFiles.filter((name) => name !== "UiToast.jsx" && /className=[^\n>]*toast/i.test(read(name)));
+    expect(customToastFiles, `禁止功能页自造 Toast：${customToastFiles.join(", ")}`).toEqual([]);
+    expect(toast).toContain('role={tone === "error" ? "alert" : "status"}');
+    expect(toast).toContain('aria-label="关闭消息"');
+    expect(toastCss).toMatch(/\.ui-toast\{[^}]*position:fixed[^}]*max-width:min\(360px,calc\(100vw - 24px\)\)/);
+    expect(toastCss).toContain("var(--bg-surface)");
+    expect(toastCss).not.toMatch(/width:\s*100%/);
   });
 
   it("keeps mobile navigation reachable and touch-safe", () => {

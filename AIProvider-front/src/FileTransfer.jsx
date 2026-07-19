@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ArrowClockwise, Copy, DownloadSimple, File, PaperPlaneTilt, TrayArrowUp, Trash } from "@phosphor-icons/react";
 import { readJsonResponse } from "./apiResponse";
+import UiToast from "./UiToast";
 import "./FileTransfer.css";
 
 const API = "/api/file-transfer";
@@ -198,7 +199,7 @@ export default function FileTransfer() {
       {uploading.active && <em>{uploading.percent}%</em>}
     </label>
 
-    {(error || notice) && <div className={`file-transfer-message${error ? " is-error" : " is-success"}`} role={error ? "alert" : "status"}>{error || notice}</div>}
+    <UiToast message={error || notice} tone={error ? "error" : "success"} onDismiss={() => { setError(""); setNotice(""); }} />
 
     <div className="file-transfer-list-card">
       <header><div><strong>现有文件</strong><span>{state === "ready" ? `${files.length} 个` : "读取中"}</span></div>
