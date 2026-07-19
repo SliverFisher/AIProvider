@@ -13,7 +13,7 @@ public class DataUniverseService {
 
     private static final Map<String, List<String>> GROUPS = new LinkedHashMap<>();
     static {
-        GROUPS.put("核心状态", Arrays.asList("maid_MaidStates", "maid_AppSettings", "maid_AppRuntimeStates", "maid_UserProfiles", "maid_DisturbanceSettings", "maid_AiConversations"));
+        GROUPS.put("核心状态", Arrays.asList("maid_MaidStates", "maid_AppSettings", "maid_AppRuntimeStates", "maid_UserProfiles", "maid_DisturbanceSettings", "maid_AiConversations", "maid_LlmBusinessModelConfigs", "maid_LlmSourcePrompts"));
         GROUPS.put("AI 与对话", Arrays.asList("maid_ChatMessages", "maid_ChatCommandLaunchers", "maid_LlmCallLogs", "maid_LlmChatConversations", "maid_LlmChatMessages", "maid_LlmProviderSelections", "maid_AgentCapabilities", "maid_AgentToolCalls"));
         GROUPS.put("知识与计划", Arrays.asList("maid_NotebookNotes", "maid_NotebookAttachments", "maid_Reminders", "maid_ReminderLogs", "maid_TimerRecords"));
         GROUPS.put("感知与主动服务", Arrays.asList("maid_DesktopContextSnapshots", "maid_ProactiveBroadcastSourceSettings", "maid_ProactiveBroadcastTriggerLogs", "maid_ActionTagDefinitions"));

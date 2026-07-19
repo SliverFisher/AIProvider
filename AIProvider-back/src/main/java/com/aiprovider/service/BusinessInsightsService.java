@@ -42,9 +42,11 @@ public class BusinessInsightsService {
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("roleId", normalizedRoleId);
         result.put("state", insightsRepo.maidState(normalizedRoleId));
+        result.put("card", insightsRepo.maidRoleCard(normalizedRoleId));
         result.put("summary", insightsRepo.maidRoleSummary(normalizedRoleId));
         result.put("daily", insightsRepo.maidRoleDaily(normalizedRoleId));
         result.put("recentCalls", insightsRepo.maidRoleRecentCalls(normalizedRoleId));
+        result.put("businesses", insightsRepo.activeLlmBusinesses());
         return result;
     }
 

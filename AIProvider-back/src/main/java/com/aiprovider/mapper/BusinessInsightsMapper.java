@@ -10,6 +10,13 @@ import java.util.Map;
 @Mapper
 public interface BusinessInsightsMapper {
 
+    String ROLE_CALL_FILTER = "(" +
+            "EXISTS (SELECT 1 FROM maid_LlmChatConversations c WHERE c.ConversationId = l.ConversationId AND LOWER(c.RoleId) = LOWER(#{roleId})) " +
+            "OR (l.Source = 'maid_ai_decision' AND EXISTS (SELECT 1 FROM maid_ProactiveBroadcastTriggerLogs p WHERE p.EventId = l.CorrelationId AND LOWER(p.RoleId) = LOWER(#{roleId}))) " +
+            "OR (l.Source = 'character_card_template_generation' AND l.CorrelationId LIKE CONCAT('character_card_template_', #{roleId}, '_%')) " +
+            "OR (l.Source IN ('lazy_voice_lines', 'agent_decision') AND l.UserPrompt LIKE CONCAT('%roleId=', #{roleId}, '%'))" +
+            ")";
+
     @Select("SELECT COUNT(*) FROM `${tableName}`")
     Long count(@Param("tableName") String tableName);
 
@@ -55,29 +62,39 @@ public interface BusinessInsightsMapper {
             "ORDER BY UpdatedAt DESC LIMIT 1")
     Map<String, Object> maidState(@Param("roleId") String roleId);
 
-    @Select("SELECT COUNT(*) AS ConversationCount, " +
-            "COALESCE((SELECT COUNT(*) FROM maid_LlmCallLogs l WHERE EXISTS " +
-            "(SELECT 1 FROM maid_LlmChatConversations c WHERE c.ConversationId = l.ConversationId AND LOWER(c.RoleId) = LOWER(#{roleId}))), 0) AS LlmCallCount, " +
-            "COALESCE((SELECT SUM(l.PromptTokens) FROM maid_LlmCallLogs l WHERE EXISTS " +
-            "(SELECT 1 FROM maid_LlmChatConversations c WHERE c.ConversationId = l.ConversationId AND LOWER(c.RoleId) = LOWER(#{roleId}))), 0) AS InputTokens, " +
-            "COALESCE((SELECT SUM(l.CompletionTokens) FROM maid_LlmCallLogs l WHERE EXISTS " +
-            "(SELECT 1 FROM maid_LlmChatConversations c WHERE c.ConversationId = l.ConversationId AND LOWER(c.RoleId) = LOWER(#{roleId}))), 0) AS OutputTokens, " +
-            "COALESCE((SELECT SUM(l.TotalTokens) FROM maid_LlmCallLogs l WHERE EXISTS " +
-            "(SELECT 1 FROM maid_LlmChatConversations c WHERE c.ConversationId = l.ConversationId AND LOWER(c.RoleId) = LOWER(#{roleId}))), 0) AS TotalTokens, " +
-            "COALESCE((SELECT COUNT(*) FROM maid_LlmChatMessages m WHERE EXISTS " +
-            "(SELECT 1 FROM maid_LlmChatConversations c WHERE c.ConversationId = m.ConversationId AND LOWER(c.RoleId) = LOWER(#{roleId}))), 0) AS MessageCount " +
-            "FROM maid_LlmChatConversations WHERE LOWER(RoleId) = LOWER(#{roleId})")
+    @Select("SELECT RoleId, Name, VoiceName, RoleTitle, CardSummary, CardSchemaVersion, PreferredVoiceId, " +
+            "ValidationStatus, ValidationMessage, LastValidatedAt, TemplateCardGeneratedAt, " +
+            "TemplateCardIterationCount, TemplateCardGenerationStatus, TemplateCardGenerationMessage, " +
+            "TemplateCardLastAttemptAt, UpdatedAt FROM maid_VoiceRoleCards " +
+            "WHERE IsEnabled = 1 AND LOWER(RoleId) = LOWER(#{roleId}) ORDER BY UpdatedAt DESC LIMIT 1")
+    Map<String, Object> maidRoleCard(@Param("roleId") String roleId);
+
+    @Select("SELECT COUNT(*) AS LlmCallCount, COALESCE(SUM(l.PromptTokens), 0) AS InputTokens, " +
+            "COALESCE(SUM(l.CompletionTokens), 0) AS OutputTokens, COALESCE(SUM(l.TotalTokens), 0) AS TotalTokens, " +
+            "(SELECT COUNT(*) FROM maid_LlmChatConversations c WHERE LOWER(c.RoleId) = LOWER(#{roleId})) AS ConversationCount, " +
+            "(SELECT COUNT(*) FROM maid_LlmChatMessages m WHERE EXISTS (SELECT 1 FROM maid_LlmChatConversations c WHERE c.ConversationId = m.ConversationId AND LOWER(c.RoleId) = LOWER(#{roleId}))) AS MessageCount, " +
+            "(SELECT COUNT(*) FROM maid_ProactiveBroadcastTriggerLogs p WHERE LOWER(p.RoleId) = LOWER(#{roleId})) AS ProactiveDecisionCount, " +
+            "(SELECT COALESCE(SUM(CASE WHEN p.Responded = 1 THEN 1 ELSE 0 END), 0) FROM maid_ProactiveBroadcastTriggerLogs p WHERE LOWER(p.RoleId) = LOWER(#{roleId})) AS ProactiveResponseCount, " +
+            "(SELECT COALESCE(SUM(CASE WHEN p.Spoke = 1 THEN 1 ELSE 0 END), 0) FROM maid_ProactiveBroadcastTriggerLogs p WHERE LOWER(p.RoleId) = LOWER(#{roleId})) AS ProactiveSpokenCount, " +
+            "(SELECT COUNT(*) FROM maid_VoiceTriggerLogs v WHERE LOWER(v.RoleId) = LOWER(#{roleId}) AND v.Played = 1) AS VoicePlayCount " +
+            "FROM maid_LlmCallLogs l WHERE " + ROLE_CALL_FILTER)
     Map<String, Object> maidRoleSummary(@Param("roleId") String roleId);
 
     @Select("SELECT DATE(l.CreatedAt) AS day, COUNT(*) AS callCount, COALESCE(SUM(l.TotalTokens), 0) AS totalTokens " +
-            "FROM maid_LlmCallLogs l WHERE l.CreatedAt >= DATE_SUB(NOW(), INTERVAL 14 DAY) AND EXISTS " +
-            "(SELECT 1 FROM maid_LlmChatConversations c WHERE c.ConversationId = l.ConversationId AND LOWER(c.RoleId) = LOWER(#{roleId})) " +
+            "FROM maid_LlmCallLogs l WHERE l.CreatedAt >= DATE_SUB(NOW(), INTERVAL 14 DAY) AND " + ROLE_CALL_FILTER + " " +
             "GROUP BY DATE(l.CreatedAt) ORDER BY day")
     List<Map<String, Object>> maidRoleDaily(@Param("roleId") String roleId);
 
-    @Select("SELECT l.Id, l.Provider, l.Model, l.PromptTokens, l.CompletionTokens, l.TotalTokens, " +
-            "l.DurationMs, l.ResponseStatusCode, l.Error, l.CreatedAt FROM maid_LlmCallLogs l WHERE EXISTS " +
-            "(SELECT 1 FROM maid_LlmChatConversations c WHERE c.ConversationId = l.ConversationId AND LOWER(c.RoleId) = LOWER(#{roleId})) " +
+    @Select("SELECT l.Id, l.Source, CASE l.Source " +
+            "WHEN 'online_chat' THEN '聊天回复' WHEN 'maid_ai_decision' THEN '主动 AI 决策' " +
+            "WHEN 'lazy_voice_lines' THEN '缓存语音文案' WHEN 'agent_decision' THEN 'Agent 决策' " +
+            "WHEN 'character_card_template_generation' THEN '角色卡生成与迭代' ELSE l.Source END AS SourceName, " +
+            "l.Provider, l.Model, l.PromptTokens, l.CompletionTokens, l.TotalTokens, " +
+            "l.DurationMs, l.ResponseStatusCode, l.Error, l.CreatedAt FROM maid_LlmCallLogs l WHERE " + ROLE_CALL_FILTER + " " +
             "ORDER BY l.CreatedAt DESC LIMIT 5")
     List<Map<String, Object>> maidRoleRecentCalls(@Param("roleId") String roleId);
+
+    @Select("SELECT BusinessKey, DisplayName, Description, Provider, ModelKey, IsEnabled, UpdatedAt " +
+            "FROM maid_LlmBusinessModelConfigs WHERE IsEnabled = 1 ORDER BY Id")
+    List<Map<String, Object>> activeLlmBusinesses();
 }

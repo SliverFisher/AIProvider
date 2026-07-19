@@ -35,6 +35,17 @@ describe("UI release gate", () => {
     expect(tokens).toContain('"--border-interactive"');
   });
 
+  it("keeps My Maid aligned with the current role-card and LLM business schema", () => {
+    const app = read("App.jsx");
+    const maidView = app.slice(app.indexOf("function MaidView"), app.indexOf("function KawaiiPageAtmosphere"));
+    ["主动判断", "主动回应", "语音播放", "角色卡迭代", "最近业务", "TemplateCardGenerationStatus", "SourceName"].forEach((field) => {
+      expect(maidView).toContain(field);
+    });
+    ["好感度", "心情", "陪伴时间"].forEach((deprecatedLabel) => {
+      expect(maidView).not.toContain(deprecatedLabel);
+    });
+  });
+
   it("keeps My Favorites server-backed, searchable, semantic, and native", () => {
     const app = read("App.jsx");
     const page = read("FavoriteMediaLibrary.jsx");

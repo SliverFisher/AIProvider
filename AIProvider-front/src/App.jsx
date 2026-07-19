@@ -442,8 +442,9 @@ function MaidView({ data }) {
   const explicitCurrentRoleId = currentMaid.MaidId ?? currentMaid.maidId ?? runtime.LastRole ?? runtime.lastRole ?? "";
   const currentRoleId = explicitCurrentRoleId || roles[0]?.RoleId || roles[0]?.roleId || "";
   const [selectedRoleId, setSelectedRoleId] = useState(currentRoleId);
-  const [roleData, setRoleData] = useState({ state: {}, summary: {}, daily: [], recentCalls: [] });
+  const [roleData, setRoleData] = useState({ state: {}, card: {}, summary: {}, daily: [], recentCalls: [], businesses: [] });
   const [roleLoading, setRoleLoading] = useState(false);
+  const [roleError, setRoleError] = useState("");
   const [avatarFailed, setAvatarFailed] = useState(false);
 
   useEffect(() => {
@@ -453,23 +454,28 @@ function MaidView({ data }) {
     if (!selectedRoleId) return;
     let cancelled = false;
     setRoleLoading(true);
+    setRoleError("");
     get(`/insights/maid-role?roleId=${encodeURIComponent(selectedRoleId)}`)
       .then((result) => { if (!cancelled) setRoleData(result); })
-      .catch(() => { if (!cancelled) setRoleData({ state: {}, summary: {}, daily: [], recentCalls: [] }); })
+      .catch((exception) => { if (!cancelled) setRoleError(exception.message || "角色数据加载失败"); })
       .finally(() => { if (!cancelled) setRoleLoading(false); });
     return () => { cancelled = true; };
   }, [selectedRoleId]);
   useEffect(() => setAvatarFailed(false), [selectedRoleId]);
 
   const selectedRole = roles.find((role) => String(role.RoleId ?? role.roleId).toLowerCase() === String(selectedRoleId).toLowerCase()) || {};
-  const selectedName = selectedRole.DisplayName ?? selectedRole.displayName ?? roleData.state?.Name ?? roleData.state?.name ?? selectedRoleId;
+  const card = roleData.card || {};
+  const selectedName = card.Name ?? card.name ?? selectedRole.DisplayName ?? selectedRole.displayName ?? roleData.state?.Name ?? roleData.state?.name ?? selectedRoleId;
   const avatarUrl = selectedRole.avatarUrl;
   const state = roleData.state || {};
   const summary = roleData.summary || {};
   const trend = roleData.daily || [];
   const recentCalls = roleData.recentCalls || [];
   const latestCall = recentCalls[0] || {};
-  const roleUpdatedAt = state.UpdatedAt ?? state.updatedAt ?? currentMaid.UpdatedAt ?? currentMaid.updatedAt ?? runtime.UpdatedAt ?? runtime.updatedAt;
+  const roleUpdatedAt = card.UpdatedAt ?? card.updatedAt ?? state.UpdatedAt ?? state.updatedAt ?? currentMaid.UpdatedAt ?? currentMaid.updatedAt ?? runtime.UpdatedAt ?? runtime.updatedAt;
+  const templateStatus = card.TemplateCardGenerationStatus ?? card.templateCardGenerationStatus;
+  const templateStatusLabel = ({ ready: "模板已就绪", generating: "模板生成中", failed: "模板生成失败", missing: "模板未生成" })[templateStatus] || "暂无模板状态";
+  const cardDescription = card.CardSummary ?? card.cardSummary ?? card.RoleTitle ?? card.roleTitle;
   const isCurrentRole = String(selectedRoleId).toLowerCase() === String(currentRoleId).toLowerCase();
   const selectedRoleIndex = Math.max(0, roles.findIndex((role) => String(role.RoleId ?? role.roleId).toLowerCase() === String(selectedRoleId).toLowerCase()));
   const selectRelativeRole = (offset) => {
@@ -481,6 +487,7 @@ function MaidView({ data }) {
   return (
     <div className="maid-compact-page kawaii-maid-space">
       <div className="maid-kawaii-banner" aria-hidden="true"><PawPrint weight="fill" /><span>MY DEAREST MAID</span><Heart weight="fill" /><b>いつもそばにいるよ</b><Sparkle weight="fill" /></div>
+      {roleError && <div className="maid-role-error" role="alert"><Warning weight="fill" />角色数据未能按现役数据库结构加载：{roleError}</div>}
       <section className="maid-compact-hero">
         <div className="maid-avatar-stage">
           <button className="maid-carousel-button" onClick={() => selectRelativeRole(-1)} disabled={roles.length < 2} aria-label="上一个角色"><CaretLeft /></button>
@@ -498,7 +505,7 @@ function MaidView({ data }) {
         <div className="maid-current-role">
           <span className="live-copy"><i /> {isCurrentRole ? (explicitCurrentRoleId ? "AMA 当前角色" : "默认展示角色") : "角色数据查看"}</span>
           <h1>{selectedName || "未同步角色"}</h1>
-          <p>{isCurrentRole ? (explicitCurrentRoleId ? "这是 AMA 当前正在使用的角色。" : "AMA 尚未指定当前角色，网页先展示角色列表中的第一位。") : "当前只切换网页查看的数据，不会修改 AMA 正在使用的角色。"}</p>
+          <p>{cardDescription || (isCurrentRole ? (explicitCurrentRoleId ? "这是 AMA 当前正在使用的角色。" : "AMA 尚未指定当前角色，网页先展示角色列表中的第一位。") : "当前只切换网页查看的数据，不会修改 AMA 正在使用的角色。")}</p>
           <label className="maid-role-select"><span>直接选择角色</span><select aria-label="直接选择角色" value={selectedRoleId} onChange={(event) => setSelectedRoleId(event.target.value)} disabled={!roles.length}>{roles.map((role) => { const id = role.RoleId ?? role.roleId; const name = role.DisplayName ?? role.displayName ?? id; return <option key={id} value={id}>{name}{String(id).toLowerCase() === String(currentRoleId).toLowerCase() ? " · 当前" : ""}</option>; })}</select><small>{roles.length ? `${selectedRoleIndex + 1} / ${roles.length}` : "暂无角色"}</small></label>
           <div className="role-freshness">
             <span>{roleLoading ? "正在加载角色数据" : "角色更新时间"}</span>
@@ -507,25 +514,25 @@ function MaidView({ data }) {
         </div>
       </section>
 
-      <section className="maid-stat-grid compact-stats">
-        <StatCard icon={Brain} label="LLM 调用" value={fmt(summary.LlmCallCount ?? summary.llmCallCount)} sub="该角色累计" tone="violet" />
-        <StatCard icon={Database} label="Token" value={compact(summary.TotalTokens ?? summary.totalTokens)} sub="该角色累计" tone="cyan" />
-        <StatCard icon={ChatCircle} label="消息" value={fmt(summary.MessageCount ?? summary.messageCount)} sub="该角色消息" tone="cyan" />
-        <StatCard icon={ChatsTeardrop} label="对话" value={fmt(summary.ConversationCount ?? summary.conversationCount)} sub="该角色会话" tone="coral" />
-        <StatCard icon={Heart} label="互动" value={fmt(state.InteractionCount ?? state.interactionCount)} sub="角色状态" tone="coral" />
-        <StatCard icon={Clock} label="陪伴时间" value={formatTime(state.CompanionshipSeconds ?? state.companionshipSeconds)} sub="角色状态" tone="amber" />
-      </section>
+      {!roleError && <section className="maid-stat-grid compact-stats">
+        <StatCard icon={Brain} label="LLM 调用" value={fmt(summary.LlmCallCount ?? summary.llmCallCount)} sub="全部现役业务" tone="violet" />
+        <StatCard icon={Database} label="Token" value={compact(summary.TotalTokens ?? summary.totalTokens)} sub="全部现役业务" tone="cyan" />
+        <StatCard icon={Pulse} label="主动判断" value={fmt(summary.ProactiveDecisionCount ?? summary.proactiveDecisionCount)} sub="该角色累计" tone="cyan" />
+        <StatCard icon={ChatCircle} label="主动回应" value={fmt(summary.ProactiveResponseCount ?? summary.proactiveResponseCount)} sub="已决定回应" tone="coral" />
+        <StatCard icon={Waveform} label="语音播放" value={fmt(summary.VoicePlayCount ?? summary.voicePlayCount)} sub="实际播放成功" tone="coral" />
+        <StatCard icon={ArrowsClockwise} label="角色卡迭代" value={fmt(card.TemplateCardIterationCount ?? card.templateCardIterationCount)} sub="当前模板版本" tone="amber" />
+      </section>}
 
-      <section className="maid-ai-runtime">
+      {!roleError && <section className="maid-ai-runtime">
         <div><span>最近 Provider</span><strong>{latestCall.Provider ?? latestCall.provider ?? "暂无记录"}</strong></div>
         <div><span>最近模型</span><strong>{latestCall.Model ?? latestCall.model ?? "暂无记录"}</strong></div>
+        <div><span>最近业务</span><strong>{latestCall.SourceName ?? latestCall.sourceName ?? "暂无记录"}</strong></div>
         <div><span>输入 Token</span><strong>{fmt(summary.InputTokens ?? summary.inputTokens)}</strong></div>
         <div><span>输出 Token</span><strong>{fmt(summary.OutputTokens ?? summary.outputTokens)}</strong></div>
-        <div><span>好感度</span><strong>{fmt(state.Favorability ?? state.favorability)}</strong></div>
-        <div><span>心情</span><strong>{state.Mood ?? state.mood ?? "暂无"}</strong></div>
-      </section>
+        <div><span>角色卡</span><strong>{templateStatusLabel}</strong></div>
+      </section>}
 
-      <section className="maid-compact-lower">
+      {!roleError && <section className="maid-compact-lower">
         <div className="maid-panel maid-compact-chart">
           <PanelHeader title="近 14 天 AI 活动" subtitle="真实 LLM 调用次数" />
           {trend.length ? (
@@ -550,13 +557,13 @@ function MaidView({ data }) {
           <PanelHeader title="最近模型调用" subtitle="最新 5 条真实记录" />
           {recentCalls.length ? recentCalls.map((call, index) => (
             <article key={call.Id ?? call.id ?? index}>
-              <div><strong>{call.Model ?? call.model ?? "未知模型"}</strong><span>{call.Provider ?? call.provider ?? "未知提供方"}</span></div>
+              <div><strong>{call.SourceName ?? call.sourceName ?? call.Source ?? call.source ?? "未知业务"}</strong><span>{call.Model ?? call.model ?? "未知模型"} · {call.Provider ?? call.provider ?? "未知提供方"}</span></div>
               <b>{fmt(call.TotalTokens ?? call.totalTokens)} tokens</b>
               <time>{timeAgo(call.CreatedAt ?? call.createdAt)}</time>
             </article>
           )) : <EmptyMini />}
         </div>
-      </section>
+      </section>}
     </div>
   );
 }

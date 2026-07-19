@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 
 import java.util.Collections;
+import java.util.Arrays;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -35,5 +36,20 @@ class SyncServiceTest {
         assertThatThrownBy(() -> service.processBusinessBatch("windows-1", Collections.singletonList(record)))
             .isInstanceOf(IllegalArgumentException.class)
             .hasMessageContaining("不支持的业务表");
+    }
+
+    @Test void acceptsCurrentMaidLlmConfigurationTables() {
+        SyncBatchDTO.BusinessRecord sourcePrompt = new SyncBatchDTO.BusinessRecord();
+        sourcePrompt.setTable("LlmSourcePrompts");
+        sourcePrompt.setPayload(new ObjectMapper().createObjectNode().put("Id", 5));
+        SyncBatchDTO.BusinessRecord businessConfig = new SyncBatchDTO.BusinessRecord();
+        businessConfig.setTable("LlmBusinessModelConfigs");
+        businessConfig.setPayload(new ObjectMapper().createObjectNode().put("Id", 6));
+
+        assertThat(service.processBusinessBatch("windows-1", Arrays.asList(sourcePrompt, businessConfig)).getTables())
+            .containsEntry("LlmSourcePrompts", 1)
+            .containsEntry("LlmBusinessModelConfigs", 1);
+        verify(repository).upsert("maid_LlmSourcePrompts", sourcePrompt.getPayload());
+        verify(repository).upsert("maid_LlmBusinessModelConfigs", businessConfig.getPayload());
     }
 }

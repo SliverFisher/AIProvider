@@ -18,7 +18,8 @@ public class SyncService {
         "ProactiveTriggerRules", "ProactiveTriggerStates", "DisturbanceSettings", "UserProfiles", "AppRuntimeStates",
         "Reminders", "ReminderLogs", "ChatCommandLaunchers", "NotebookNotes", "NotebookAttachments", "ActionTagDefinitions",
         "DesktopContextSnapshots", "ProactiveBroadcastSourceSettings", "ProactiveBroadcastTriggerLogs", "LlmCallLogs",
-        "DbColumnComments", "LlmChatConversations", "LlmChatMessages", "VoiceCacheDedupeLogs", "LlmProviderSelections",
+        "DbColumnComments", "LlmChatConversations", "LlmChatMessages", "LlmSourcePrompts", "LlmBusinessModelConfigs",
+        "VoiceCacheDedupeLogs", "LlmProviderSelections",
         "ChatMessages", "VoiceConversations", "AgentCapabilities", "AgentToolCalls", "VaultItems", "VaultItemHistories",
         "VideoItems", "VideoAlbums", "VideoTagDefinitions", "VideoSiteConfigs", "VideoPlaybackHistories", "VideoSubtitleBindings",
         "RemoteVideoItems", "RemoteDownloadTasks", "RemotePlayHistories", "RemoteAuthors", "RemoteVideoSettings"
