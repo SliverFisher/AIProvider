@@ -27,4 +27,13 @@ class ContentOperationsServiceTest {
         dto.setAutomationEnabled(true);dto.setDefaultPublishMode("AUTO");dto.setCrawlIntervalMinutes(240);dto.setCommentIntervalMinutes(30);dto.setContentModel("gemini");
         ContentOperationSettingsVO result=service.updateSettings(dto);assertTrue(result.isAutomationEnabled());assertEquals("AUTO",result.getDefaultPublishMode());verify(repository).updateSettings(any());verify(repository).updateAllSourcePollIntervals(240);
     }
+
+    @Test void acceptsOneMinuteAutomationIntervals(){
+        ContentOperationsRepository repository=mock(ContentOperationsRepository.class);
+        Map<String,Object> saved=new LinkedHashMap<>();saved.put("automationEnabled",true);saved.put("defaultPublishMode","AUTO");saved.put("crawlIntervalMinutes",1);saved.put("commentIntervalMinutes",1);saved.put("contentModel","gemini");
+        when(repository.findSettings()).thenReturn(saved);
+        ContentOperationSettingsDTO dto=new ContentOperationSettingsDTO();dto.setAutomationEnabled(true);dto.setDefaultPublishMode("AUTO");dto.setCrawlIntervalMinutes(1);dto.setCommentIntervalMinutes(1);
+        new ContentOperationsService(repository).updateSettings(dto);
+        verify(repository).updateAllSourcePollIntervals(1);
+    }
 }

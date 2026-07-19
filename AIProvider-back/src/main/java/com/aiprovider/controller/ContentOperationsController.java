@@ -30,12 +30,19 @@ public class ContentOperationsController {
     @GetMapping("/overview") public Result<ContentOperationsOverviewVO> overview(){return Result.success(service.overview());}
     @PostMapping("/accounts") public Result<ContentAccountVO> createAccount(@RequestBody ContentAccountCreateDTO dto){return Result.success(service.createAccount(dto));}
     @PatchMapping("/accounts/{id}") public Result<ContentAccountVO> updateAccount(@PathVariable long id,@RequestBody ContentAccountModeDTO dto){return Result.success(service.updateAccount(id,dto));}
+    @PutMapping("/accounts/{id}") public Result<ContentAccountVO> updateAccountDetails(@PathVariable long id,@RequestBody ContentAccountUpdateDTO dto){return Result.success(service.updateAccountDetails(id,dto));}
+    @DeleteMapping("/accounts/{id}") public Result<Void> deleteAccount(@PathVariable long id){service.archiveAccount(id);return Result.success(null);}
     @PostMapping("/sources") public Result<ContentSourceVO> createSource(@RequestBody ContentSourceCreateDTO dto){return Result.success(sourceService.create(dto));}
+    @PutMapping("/sources/{id}") public Result<ContentSourceVO> updateSource(@PathVariable long id,@RequestBody ContentSourceUpdateDTO dto){return Result.success(sourceService.update(id,dto));}
+    @DeleteMapping("/sources/{id}") public Result<Void> deleteSource(@PathVariable long id){sourceService.archive(id);return Result.success(null);}
     @PostMapping("/collection-accounts") public Result<ContentCollectionAccountVO> createCollectionAccount(@RequestBody ContentCollectionAccountCreateDTO dto){return Result.success(sourceService.createCollectionAccount(dto));}
+    @PutMapping("/collection-accounts/{id}") public Result<ContentCollectionAccountVO> updateCollectionAccount(@PathVariable long id,@RequestBody ContentCollectionAccountUpdateDTO dto){return Result.success(sourceService.updateCollectionAccount(id,dto));}
+    @DeleteMapping("/collection-accounts/{id}") public Result<Void> deleteCollectionAccount(@PathVariable long id){sourceService.archiveCollectionAccount(id);return Result.success(null);}
     @PostMapping("/sources/{id}/test-fetch") public Result<ContentSourceTestVO> testSource(@PathVariable long id){return Result.success(sourceService.testFetch(id));}
     @GetMapping("/sources/{id}/items") public Result<List<ContentItemVO>> sourceItems(@PathVariable long id,@RequestParam(defaultValue="50") int limit){return Result.success(sourceService.items(id,limit));}
     @PostMapping("/items/{id}/classify") public Result<ContentRelevanceVO> classify(@PathVariable long id){return Result.success(relevanceService.classify(id));}
     @GetMapping("/accounts/{id}/sources") public Result<List<Long>> accountSources(@PathVariable long id){return Result.success(sourceService.accountSourceIds(id));}
+    @GetMapping("/accounts/{id}/source-rules") public Result<List<Map<String,Object>>> accountSourceRules(@PathVariable long id){return Result.success(sourceService.accountSourceRules(id));}
     @PutMapping("/accounts/{id}/sources") public Result<List<Long>> bindAccountSources(@PathVariable long id,@RequestBody ContentAccountSourcesDTO dto){return Result.success(sourceService.bindAccountSources(id,dto));}
     @PostMapping("/accounts/{id}/test-pipeline") public Result<List<ContentPipelineTestVO>> testPipeline(@PathVariable long id){return Result.success(pipelineService.testAccount(id));}
     @PostMapping("/publications/{id}/retry") public Result<XhsPublicationResultVO> retryPublication(@PathVariable long id){return Result.success(publicationService.publish(id));}

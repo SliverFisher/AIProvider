@@ -3,12 +3,15 @@ package com.aiprovider.service;
 import com.aiprovider.mapper.ContentOperationsMapper;
 import com.aiprovider.model.dto.ContentSourceCreateDTO;
 import com.aiprovider.model.dto.ContentCollectionAccountCreateDTO;
+import com.aiprovider.model.dto.ContentAccountSourcesDTO;
+import com.aiprovider.model.dto.ContentAccountSourceRuleDTO;
 import com.aiprovider.repository.ContentOperationsRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import java.time.LocalDateTime;
 import java.util.*;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
@@ -33,4 +36,8 @@ class ContentSourceServiceTest {
         verify(repository,times(1)).insertContentItem(argThat((ContentOperationsMapper.ContentItemRecord item)->"2".equals(item.getExternalId())));
     }
     @Test void fetchesWebSourceWithDecryptedSession(){ContentOperationsRepository repository=mock(ContentOperationsRepository.class);ContentPlatformSecretCipher cipher=mock(ContentPlatformSecretCipher.class);TwitterPublicWebClient web=mock(TwitterPublicWebClient.class);ObjectMapper json=new ObjectMapper();Map<String,Object> source=new HashMap<>();source.put("id",8L);source.put("platform","TWITTER");source.put("adapterType","TWITTER_WEB");source.put("externalHandle","elonmusk");source.put("credentialEncrypted","encrypted");source.put("name","Elon Musk");when(repository.findSource(8)).thenReturn(source);when(cipher.decrypt("encrypted")).thenReturn("normalized-cookie");when(web.fetchLatest("elonmusk","normalized-cookie")).thenReturn(new TwitterFetchedPost("3","session latest","https://x.com/elonmusk/status/3",LocalDateTime.now(),json.createObjectNode()));when(repository.insertContentItem(any())).thenReturn(1);when(repository.findContentItems(8,1)).thenReturn(Collections.emptyList());assertEquals(1,new ContentSourceService(repository,cipher,mock(TwitterTimelineClient.class),web,json).testFetch(8).getNewCount());verify(web).fetchLatest("elonmusk","normalized-cookie");}
+
+    @Test void savesOneMinuteIntervalRuleForAnAccountAndSource(){ContentOperationsRepository repository=mock(ContentOperationsRepository.class);when(repository.findAccount(1L)).thenReturn(Map.of("id",1L));when(repository.isEnabledSource(3L)).thenReturn(true);ContentAccountSourceRuleDTO rule=new ContentAccountSourceRuleDTO();rule.setSourceId(3L);rule.setEnabled(true);rule.setPublishTiming("INTERVAL");rule.setPublishIntervalMinutes(1);ContentAccountSourcesDTO dto=new ContentAccountSourcesDTO();dto.setRules(List.of(rule));new ContentSourceService(repository,mock(ContentPlatformSecretCipher.class),mock(TwitterTimelineClient.class),mock(TwitterPublicWebClient.class),new ObjectMapper()).bindAccountSources(1L,dto);verify(repository).insertAccountSource(1L,3L,true,"INTERVAL",1);}
+
+    @Test void refusesToArchiveCollectionAccountWhileSourcesStillUseIt(){ContentOperationsRepository repository=mock(ContentOperationsRepository.class);when(repository.findCollectionAccount(4L)).thenReturn(Map.of("id",4L));when(repository.hasActiveSourcesForCollectionAccount(4L)).thenReturn(true);ContentSourceService service=new ContentSourceService(repository,mock(ContentPlatformSecretCipher.class),mock(TwitterTimelineClient.class),mock(TwitterPublicWebClient.class),new ObjectMapper());assertThrows(IllegalArgumentException.class,()->service.archiveCollectionAccount(4L));verify(repository,never()).archiveCollectionAccount(4L);}
 }

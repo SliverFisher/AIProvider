@@ -15,13 +15,20 @@ public class ContentOperationsRepository {
     public Map<String,Object> findAccount(long id){return mapper.findAccount(id);}
     public long insertAccount(ContentOperationsMapper.AccountRecord record){mapper.insertAccount(record);return record.getId();}
     public boolean updateAccountMode(long id,String mode,boolean enabled){return mapper.updateAccountMode(id,mode,enabled)>0;}
+    public boolean updateAccount(long id,String name,String handle,String mode,boolean enabled){return mapper.updateAccount(id,name,handle,mode,enabled)>0;}
+    public boolean archiveAccount(long id){return mapper.archiveAccount(id)>0;}
     public boolean updateAccountSession(long id,String encrypted,String hint){return mapper.updateAccountSession(id,encrypted,hint)>0;}
     public List<Map<String,Object>> findSources(){return mapper.findSources();}
     public Map<String,Object> findSource(long id){return mapper.findSource(id);}
     public long insertSource(ContentOperationsMapper.SourceRecord record){mapper.insertSource(record);return record.getId();}
+    public boolean updateSource(long id,String name,String uid,String handle,String url,boolean enabled){return mapper.updateSource(id,name,uid,handle,url,enabled)>0;}
+    public boolean archiveSource(long id){return mapper.archiveSource(id)>0;}
     public List<Map<String,Object>> findCollectionAccounts(){return mapper.findCollectionAccounts();}
     public Map<String,Object> findCollectionAccount(long id){return mapper.findCollectionAccount(id);}
     public long insertCollectionAccount(ContentOperationsMapper.CollectionAccountRecord record){mapper.insertCollectionAccount(record);return record.getId();}
+    public boolean updateCollectionAccount(long id,String name,String encrypted,String hint,boolean enabled){return mapper.updateCollectionAccount(id,name,encrypted,hint,enabled)>0;}
+    public boolean archiveCollectionAccount(long id){return mapper.archiveCollectionAccount(id)>0;}
+    public boolean hasActiveSourcesForCollectionAccount(long id){return mapper.countActiveSourcesForCollectionAccount(id)>0;}
     public void insertSourceCollectionAccount(long sourceId,long collectionAccountId){if(mapper.insertSourceCollectionAccount(sourceId,collectionAccountId)!=1)throw new IllegalStateException("采集源账号绑定失败");}
     public int insertContentItem(ContentOperationsMapper.ContentItemRecord record){return mapper.insertContentItem(record);}
     public List<Map<String,Object>> findContentItems(long sourceId,int limit){return mapper.findContentItems(sourceId,limit);}
@@ -30,7 +37,11 @@ public class ContentOperationsRepository {
     public void markSourceTestSucceeded(long id){mapper.markSourceTestSucceeded(id);}
     public void markSourceTestFailed(long id,String error){mapper.markSourceTestFailed(id,error);}
     public List<Long> findAccountSourceIds(long accountId){return mapper.findAccountSourceIds(accountId);}
-    public List<Map<String,Object>> findDueBindings(){return mapper.findDueBindings();}
+    public List<Map<String,Object>> findDueSources(){return mapper.findDueSources();}
+    public List<Map<String,Object>> findDueIntervalBindings(){return mapper.findDueIntervalBindings();}
+    public List<Map<String,Object>> findImmediateBindings(long sourceId){return mapper.findImmediateBindings(sourceId);}
+    public void markBindingDispatched(long accountId,long sourceId){if(mapper.markBindingDispatched(accountId,sourceId)!=1)throw new IllegalStateException("发布规则执行时间更新失败");}
+    public List<Map<String,Object>> findAccountSourceRules(long accountId){return mapper.findAccountSourceRules(accountId);}
     public void updateAllSourcePollIntervals(int minutes){mapper.updateAllSourcePollIntervals(minutes);}
     public long insertOperationRun(ContentOperationsMapper.OperationRunRecord record){mapper.insertOperationRun(record);return record.getId();}
     public void finishOperationRun(long id,String metricsJson){if(mapper.finishOperationRun(id,metricsJson)!=1)throw new IllegalStateException("运行记录成功状态更新失败");}
@@ -46,7 +57,8 @@ public class ContentOperationsRepository {
     public void markPublicationUnknown(long id,String message){mapper.markPublicationUnknown(id,message);}
     public void markAccountPublished(long id){mapper.markAccountPublished(id);}public void markContentItemPublished(long id){mapper.markContentItemPublished(id);}
     public void deleteAccountSources(long accountId){mapper.deleteAccountSources(accountId);}
-    public void insertAccountSource(long accountId,long sourceId){mapper.insertAccountSource(accountId,sourceId);}
+    public void insertAccountSource(long accountId,long sourceId,boolean enabled,String timing,int interval){mapper.insertAccountSource(accountId,sourceId,enabled,timing,interval);}
+    public Map<String,Object> findLatestUndispatchedItem(long accountId,long sourceId){return mapper.findLatestUndispatchedItem(accountId,sourceId);}
     public boolean isEnabledSource(long id){return mapper.countEnabledSource(id)>0;}
     public List<Map<String,Object>> findRecentPublications(){return mapper.findRecentPublications();}
     public Map<String,Object> findPublicationFullDetails(long id){return mapper.findPublicationFullDetails(id);}

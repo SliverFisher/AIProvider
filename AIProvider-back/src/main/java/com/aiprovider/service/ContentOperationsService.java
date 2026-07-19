@@ -41,11 +41,17 @@ public class ContentOperationsService {
     }
 
     @Transactional
+    public ContentAccountVO updateAccountDetails(long id,ContentAccountUpdateDTO dto){Map<String,Object> current=repository.findAccount(id);if(current==null)throw new IllegalArgumentException("小红书账号不存在");if(dto==null)throw new IllegalArgumentException("账号配置不能为空");String name=required(dto.getDisplayName(),"账号名称",100);String handle=optional(dto.getAccountHandle(),120);String publishMode=mode(dto.getPublishMode());boolean enabled=dto.getEnabled()==null?truth(current.get("enabled")):dto.getEnabled();if(!repository.updateAccount(id,name,handle,publishMode,enabled))throw new IllegalStateException("账号配置更新失败");return account(id);}
+
+    @Transactional
+    public void archiveAccount(long id){if(!repository.archiveAccount(id))throw new IllegalArgumentException("小红书账号不存在或已经删除");}
+
+    @Transactional
     public ContentOperationSettingsVO updateSettings(ContentOperationSettingsDTO dto){
         if(dto==null||dto.getAutomationEnabled()==null) throw new IllegalArgumentException("自动运行开关不能为空");
         Map<String,Object> currentSettings=repository.findSettings();if(currentSettings==null)throw new IllegalStateException("内容运营设置不存在");
         int crawl=dto.getCrawlIntervalMinutes()==null?240:dto.getCrawlIntervalMinutes(); int comments=dto.getCommentIntervalMinutes()==null?30:dto.getCommentIntervalMinutes();
-        range(crawl,15,10080,"采集周期");range(comments,5,1440,"评论周期");
+        positive(crawl,"采集周期");positive(comments,"评论周期");
         ContentOperationsMapper.SettingsRecord record=new ContentOperationsMapper.SettingsRecord(); record.setAutomationEnabled(dto.getAutomationEnabled());
         record.setDefaultPublishMode(mode(dto.getDefaultPublishMode()));record.setCrawlIntervalMinutes(crawl);record.setCommentIntervalMinutes(comments);
         String contentModel=dto.getContentModel()==null?text(currentSettings.get("contentModel")):required(dto.getContentModel(),"内容模型",100);
@@ -67,6 +73,7 @@ public class ContentOperationsService {
     private String required(String value,String label,int max){String v=value==null?"":value.trim();if(v.isEmpty())throw new IllegalArgumentException(label+"不能为空");if(v.length()>max)throw new IllegalArgumentException(label+"长度不能超过 "+max);return v;}
     private String optional(String value,int max){if(value==null||value.trim().isEmpty())return null;String v=value.trim();if(v.length()>max)throw new IllegalArgumentException("账号标识过长");return v;}
     private void range(int value,int min,int max,String label){if(value<min||value>max)throw new IllegalArgumentException(label+"必须在 "+min+" 到 "+max+" 分钟之间");}
+    private void positive(int value,String label){if(value<1)throw new IllegalArgumentException(label+"必须大于 0 分钟");}
     private int bounded(int value,int min,int max){return Math.max(min,Math.min(max,value));}
     private String text(Object v){return v==null?null:String.valueOf(v);} private Long number(Object v){return v==null?null:((Number)v).longValue();}
     private int integer(Object v){return v==null?0:((Number)v).intValue();} private boolean truth(Object v){return v instanceof Boolean?(Boolean)v:v!=null&&((Number)v).intValue()!=0;}

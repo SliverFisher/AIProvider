@@ -30,6 +30,16 @@ describe("ContentOperationsCenter", () => {
     expect(await screen.findByText("Gemini 内容生成")).toBeTruthy();expect(screen.getByText("密钥已配置 ••••1234")).toBeTruthy();
     const keyInput=screen.getByPlaceholderText("留空则保留现有密钥");expect(keyInput.value).toBe("");expect(keyInput.type).toBe("password");
   });
+  it("configures an independent interval publishing rule for each account and source",async()=>{
+    const configured={...overview,sources:[{id:3,name:"OpenAI",adapterType:"TWITTER_WEB",externalHandle:"OpenAI",enabled:true}]};
+    vi.stubGlobal("fetch",vi.fn(async(input,options)=>{const url=String(input);if(url.endsWith("/source-rules"))return ok([{sourceId:3,sourceName:"OpenAI",enabled:true,publishTiming:"INTERVAL",publishIntervalMinutes:1}]);if(options?.method==="PUT")return ok([3]);return ok(configured);}));
+    render(<ContentOperationsCenter/>);fireEvent.click(await screen.findByRole("button",{name:"账号"}));
+    expect((await screen.findByRole("combobox",{name:"OpenAI发布时机"})).value).toBe("INTERVAL");
+    expect(screen.getByRole("spinbutton",{name:"OpenAI发布间隔"}).getAttribute("min")).toBe("1");
+    fireEvent.click(screen.getByRole("button",{name:"保存发布规则"}));
+    await waitFor(()=>expect(fetch).toHaveBeenCalledWith("/api/content-operations/accounts/1/sources",expect.objectContaining({method:"PUT"})));
+    const call=fetch.mock.calls.find(([url,options])=>String(url).endsWith("/accounts/1/sources")&&options?.method==="PUT");expect(JSON.parse(call[1].body).rules[0]).toMatchObject({sourceId:3,publishTiming:"INTERVAL",publishIntervalMinutes:1});
+  });
   it("shows request failures as a dismissible foreground alert", async()=>{
     vi.stubGlobal("fetch",vi.fn(async()=>fail("X Cookie 导入失败")));render(<ContentOperationsCenter/>);
     expect((await screen.findByRole("alert")).textContent).toContain("X Cookie 导入失败");

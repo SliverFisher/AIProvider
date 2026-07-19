@@ -12,10 +12,10 @@ public interface ContentOperationsMapper {
     @Update("UPDATE c_ContentOperationSettings SET AutomationEnabled=#{automationEnabled},DefaultPublishMode=#{defaultPublishMode},CrawlIntervalMinutes=#{crawlIntervalMinutes},CommentIntervalMinutes=#{commentIntervalMinutes},ContentModel=#{contentModel} WHERE Id=1")
     int updateSettings(SettingsRecord record);
 
-    @Select("SELECT Id id,Platform platform,DisplayName displayName,AccountHandle accountHandle,PublishMode publishMode,AdapterType adapterType,Enabled enabled,ConnectionStatus connectionStatus,AdapterStatus adapterStatus,SessionEncrypted sessionEncrypted,SessionHint sessionHint,LastError lastError,LastConnectedAt lastConnectedAt,LastPublishedAt lastPublishedAt FROM c_ContentAccounts WHERE Platform='XIAOHONGSHU' ORDER BY Enabled DESC,UpdatedAt DESC")
+    @Select("SELECT Id id,Platform platform,DisplayName displayName,AccountHandle accountHandle,PublishMode publishMode,AdapterType adapterType,Enabled enabled,ConnectionStatus connectionStatus,AdapterStatus adapterStatus,SessionEncrypted sessionEncrypted,SessionHint sessionHint,LastError lastError,LastConnectedAt lastConnectedAt,LastPublishedAt lastPublishedAt FROM c_ContentAccounts WHERE Platform='XIAOHONGSHU' AND ArchivedAt IS NULL ORDER BY Enabled DESC,UpdatedAt DESC")
     List<Map<String,Object>> findAccounts();
 
-    @Select("SELECT Id id,Platform platform,DisplayName displayName,AccountHandle accountHandle,PublishMode publishMode,AdapterType adapterType,Enabled enabled,ConnectionStatus connectionStatus,AdapterStatus adapterStatus,SessionEncrypted sessionEncrypted,SessionHint sessionHint,LastError lastError,LastConnectedAt lastConnectedAt,LastPublishedAt lastPublishedAt FROM c_ContentAccounts WHERE Id=#{id} AND Platform='XIAOHONGSHU'")
+    @Select("SELECT Id id,Platform platform,DisplayName displayName,AccountHandle accountHandle,PublishMode publishMode,AdapterType adapterType,Enabled enabled,ConnectionStatus connectionStatus,AdapterStatus adapterStatus,SessionEncrypted sessionEncrypted,SessionHint sessionHint,LastError lastError,LastConnectedAt lastConnectedAt,LastPublishedAt lastPublishedAt FROM c_ContentAccounts WHERE Id=#{id} AND Platform='XIAOHONGSHU' AND ArchivedAt IS NULL")
     Map<String,Object> findAccount(long id);
 
     @Insert("INSERT INTO c_ContentAccounts(Platform,DisplayName,AccountHandle,PublishMode,Enabled,ConnectionStatus,AdapterStatus) VALUES('XIAOHONGSHU',#{displayName},#{accountHandle},#{publishMode},TRUE,'NOT_CONFIGURED','NOT_CONFIGURED')")
@@ -25,24 +25,39 @@ public interface ContentOperationsMapper {
     @Update("UPDATE c_ContentAccounts SET PublishMode=#{publishMode},Enabled=#{enabled} WHERE Id=#{id} AND Platform='XIAOHONGSHU'")
     int updateAccountMode(@Param("id") long id,@Param("publishMode") String publishMode,@Param("enabled") boolean enabled);
 
+    @Update("UPDATE c_ContentAccounts SET DisplayName=#{displayName},AccountHandle=#{accountHandle},PublishMode=#{publishMode},Enabled=#{enabled} WHERE Id=#{id} AND Platform='XIAOHONGSHU' AND ArchivedAt IS NULL")
+    int updateAccount(@Param("id") long id,@Param("displayName") String displayName,@Param("accountHandle") String accountHandle,@Param("publishMode") String publishMode,@Param("enabled") boolean enabled);
+
+    @Update("UPDATE c_ContentAccounts SET Enabled=FALSE,ArchivedAt=NOW(3) WHERE Id=#{id} AND Platform='XIAOHONGSHU' AND ArchivedAt IS NULL")
+    int archiveAccount(long id);
+
     @Update("UPDATE c_ContentAccounts SET SessionEncrypted=#{encrypted},SessionHint=#{hint},ConnectionStatus='CONNECTED',AdapterStatus='READY',LastError=NULL,LastConnectedAt=NOW(3) WHERE Id=#{id} AND Platform='XIAOHONGSHU'")
     int updateAccountSession(@Param("id") long id,@Param("encrypted") String encrypted,@Param("hint") String hint);
 
-    @Select("SELECT s.Id id,s.Platform platform,s.Name name,s.SourceType sourceType,s.ExternalUid externalUid,s.ExternalHandle externalHandle,s.AdapterType adapterType,s.SourceUrl sourceUrl,COALESCE(c.CredentialEncrypted,s.CredentialEncrypted) credentialEncrypted,COALESCE(c.CredentialHint,s.CredentialHint) credentialHint,s.PollIntervalMinutes pollIntervalMinutes,s.FetchLimit fetchLimit,s.Enabled enabled,s.LastStatus lastStatus,s.LastCollectedAt lastCollectedAt,s.LastTestedAt lastTestedAt,c.Id collectionAccountId,c.DisplayName collectionAccountName FROM c_ContentSources s LEFT JOIN c_ContentSourceCollectionAccounts b ON b.SourceId=s.Id LEFT JOIN c_ContentCollectionAccounts c ON c.Id=b.CollectionAccountId ORDER BY s.Enabled DESC,s.UpdatedAt DESC")
+    @Select("SELECT s.Id id,s.Platform platform,s.Name name,s.SourceType sourceType,s.ExternalUid externalUid,s.ExternalHandle externalHandle,s.AdapterType adapterType,s.SourceUrl sourceUrl,COALESCE(c.CredentialEncrypted,s.CredentialEncrypted) credentialEncrypted,COALESCE(c.CredentialHint,s.CredentialHint) credentialHint,s.PollIntervalMinutes pollIntervalMinutes,s.FetchLimit fetchLimit,s.Enabled enabled,s.LastStatus lastStatus,s.LastCollectedAt lastCollectedAt,s.LastTestedAt lastTestedAt,c.Id collectionAccountId,c.DisplayName collectionAccountName FROM c_ContentSources s LEFT JOIN c_ContentSourceCollectionAccounts b ON b.SourceId=s.Id LEFT JOIN c_ContentCollectionAccounts c ON c.Id=b.CollectionAccountId AND c.ArchivedAt IS NULL WHERE s.ArchivedAt IS NULL ORDER BY s.Enabled DESC,s.UpdatedAt DESC")
     List<Map<String,Object>> findSources();
 
-    @Select("SELECT s.Id id,s.Platform platform,s.Name name,s.SourceType sourceType,s.ExternalUid externalUid,s.ExternalHandle externalHandle,s.AdapterType adapterType,s.SourceUrl sourceUrl,COALESCE(c.CredentialEncrypted,s.CredentialEncrypted) credentialEncrypted,COALESCE(c.CredentialHint,s.CredentialHint) credentialHint,s.PollIntervalMinutes pollIntervalMinutes,s.FetchLimit fetchLimit,s.Enabled enabled,s.LastStatus lastStatus,s.LastCollectedAt lastCollectedAt,s.LastTestedAt lastTestedAt,c.Id collectionAccountId,c.DisplayName collectionAccountName FROM c_ContentSources s LEFT JOIN c_ContentSourceCollectionAccounts b ON b.SourceId=s.Id LEFT JOIN c_ContentCollectionAccounts c ON c.Id=b.CollectionAccountId WHERE s.Id=#{id}")
+    @Select("SELECT s.Id id,s.Platform platform,s.Name name,s.SourceType sourceType,s.ExternalUid externalUid,s.ExternalHandle externalHandle,s.AdapterType adapterType,s.SourceUrl sourceUrl,COALESCE(c.CredentialEncrypted,s.CredentialEncrypted) credentialEncrypted,COALESCE(c.CredentialHint,s.CredentialHint) credentialHint,s.PollIntervalMinutes pollIntervalMinutes,s.FetchLimit fetchLimit,s.Enabled enabled,s.LastStatus lastStatus,s.LastCollectedAt lastCollectedAt,s.LastTestedAt lastTestedAt,c.Id collectionAccountId,c.DisplayName collectionAccountName FROM c_ContentSources s LEFT JOIN c_ContentSourceCollectionAccounts b ON b.SourceId=s.Id LEFT JOIN c_ContentCollectionAccounts c ON c.Id=b.CollectionAccountId AND c.ArchivedAt IS NULL WHERE s.Id=#{id} AND s.ArchivedAt IS NULL")
     Map<String,Object> findSource(long id);
 
-    @Select("SELECT Id id,Platform platform,DisplayName displayName,AdapterType adapterType,CredentialEncrypted credentialEncrypted,CredentialHint credentialHint,Enabled enabled FROM c_ContentCollectionAccounts ORDER BY Enabled DESC,UpdatedAt DESC")
+    @Select("SELECT Id id,Platform platform,DisplayName displayName,AdapterType adapterType,CredentialEncrypted credentialEncrypted,CredentialHint credentialHint,Enabled enabled FROM c_ContentCollectionAccounts WHERE ArchivedAt IS NULL ORDER BY Enabled DESC,UpdatedAt DESC")
     List<Map<String,Object>> findCollectionAccounts();
 
-    @Select("SELECT Id id,Platform platform,DisplayName displayName,AdapterType adapterType,CredentialEncrypted credentialEncrypted,CredentialHint credentialHint,Enabled enabled FROM c_ContentCollectionAccounts WHERE Id=#{id}")
+    @Select("SELECT Id id,Platform platform,DisplayName displayName,AdapterType adapterType,CredentialEncrypted credentialEncrypted,CredentialHint credentialHint,Enabled enabled FROM c_ContentCollectionAccounts WHERE Id=#{id} AND ArchivedAt IS NULL")
     Map<String,Object> findCollectionAccount(long id);
 
     @Insert("INSERT INTO c_ContentCollectionAccounts(Platform,DisplayName,AdapterType,CredentialEncrypted,CredentialHint,Enabled) VALUES('TWITTER',#{displayName},#{adapterType},#{credentialEncrypted},#{credentialHint},TRUE)")
     @Options(useGeneratedKeys=true,keyProperty="id")
     int insertCollectionAccount(CollectionAccountRecord record);
+
+    @Update("UPDATE c_ContentCollectionAccounts SET DisplayName=#{displayName},CredentialEncrypted=#{credentialEncrypted},CredentialHint=#{credentialHint},Enabled=#{enabled} WHERE Id=#{id} AND ArchivedAt IS NULL")
+    int updateCollectionAccount(@Param("id") long id,@Param("displayName") String displayName,@Param("credentialEncrypted") String credentialEncrypted,@Param("credentialHint") String credentialHint,@Param("enabled") boolean enabled);
+
+    @Update("UPDATE c_ContentCollectionAccounts SET Enabled=FALSE,ArchivedAt=NOW(3) WHERE Id=#{id} AND ArchivedAt IS NULL")
+    int archiveCollectionAccount(long id);
+
+    @Select("SELECT COUNT(*) FROM c_ContentSourceCollectionAccounts b JOIN c_ContentSources s ON s.Id=b.SourceId WHERE b.CollectionAccountId=#{id} AND s.ArchivedAt IS NULL")
+    int countActiveSourcesForCollectionAccount(long id);
 
     @Insert("INSERT INTO c_ContentSourceCollectionAccounts(SourceId,CollectionAccountId) VALUES(#{sourceId},#{collectionAccountId})")
     int insertSourceCollectionAccount(@Param("sourceId") long sourceId,@Param("collectionAccountId") long collectionAccountId);
@@ -50,6 +65,12 @@ public interface ContentOperationsMapper {
     @Insert("INSERT INTO c_ContentSources(Platform,SourceType,ExternalUid,ExternalHandle,AdapterType,Name,SourceUrl,CredentialEncrypted,CredentialHint,PollIntervalMinutes,FetchLimit,Enabled) VALUES(#{platform},#{sourceType},#{externalUid},#{externalHandle},#{adapterType},#{name},#{sourceUrl},#{credentialEncrypted},#{credentialHint},#{pollIntervalMinutes},#{fetchLimit},TRUE)")
     @Options(useGeneratedKeys=true,keyProperty="id")
     int insertSource(SourceRecord record);
+
+    @Update("UPDATE c_ContentSources SET Name=#{name},ExternalUid=#{externalUid},ExternalHandle=#{externalHandle},SourceUrl=#{sourceUrl},Enabled=#{enabled} WHERE Id=#{id} AND ArchivedAt IS NULL")
+    int updateSource(@Param("id") long id,@Param("name") String name,@Param("externalUid") String externalUid,@Param("externalHandle") String externalHandle,@Param("sourceUrl") String sourceUrl,@Param("enabled") boolean enabled);
+
+    @Update("UPDATE c_ContentSources SET Enabled=FALSE,ArchivedAt=NOW(3) WHERE Id=#{id} AND ArchivedAt IS NULL")
+    int archiveSource(long id);
 
     @Insert("INSERT IGNORE INTO c_ContentItems(SourceId,ExternalId,SourceUrl,AuthorName,RawText,RawPayloadJson,PublishedAt,ProcessingStatus,FetchedByRunType) VALUES(#{sourceId},#{externalId},#{sourceUrl},#{authorName},#{rawText},CAST(#{rawPayloadJson} AS JSON),#{publishedAt},'COLLECTED',#{fetchedByRunType})")
     int insertContentItem(ContentItemRecord record);
@@ -72,8 +93,20 @@ public interface ContentOperationsMapper {
     @Select("SELECT SourceId FROM c_ContentAccountSources WHERE AccountId=#{accountId} AND Enabled=TRUE ORDER BY SourceId")
     List<Long> findAccountSourceIds(long accountId);
 
-    @Select("SELECT a.Id accountId,s.Id sourceId FROM c_ContentAccounts a JOIN c_ContentAccountSources b ON b.AccountId=a.Id AND b.Enabled=TRUE JOIN c_ContentSources s ON s.Id=b.SourceId AND s.Enabled=TRUE JOIN c_ContentOperationSettings cfg ON cfg.Id=1 WHERE cfg.AutomationEnabled=TRUE AND a.Platform='XIAOHONGSHU' AND a.Enabled=TRUE AND a.PublishMode='AUTO' AND a.ConnectionStatus='CONNECTED' AND a.SessionEncrypted IS NOT NULL AND (s.LastCollectedAt IS NULL OR TIMESTAMPDIFF(MINUTE,s.LastCollectedAt,NOW(3))>=cfg.CrawlIntervalMinutes) ORDER BY s.Id,a.Id")
-    List<Map<String,Object>> findDueBindings();
+    @Select("SELECT s.Id sourceId FROM c_ContentSources s JOIN c_ContentOperationSettings cfg ON cfg.Id=1 WHERE cfg.AutomationEnabled=TRUE AND s.Enabled=TRUE AND s.ArchivedAt IS NULL AND (s.LastCollectedAt IS NULL OR TIMESTAMPDIFF(MINUTE,s.LastCollectedAt,NOW(3))>=cfg.CrawlIntervalMinutes) ORDER BY s.Id")
+    List<Map<String,Object>> findDueSources();
+
+    @Select("SELECT a.Id accountId,b.SourceId sourceId,b.PublishTiming publishTiming,b.PublishIntervalMinutes publishIntervalMinutes,b.LastDispatchedAt lastDispatchedAt FROM c_ContentAccountSources b JOIN c_ContentAccounts a ON a.Id=b.AccountId JOIN c_ContentSources s ON s.Id=b.SourceId JOIN c_ContentOperationSettings cfg ON cfg.Id=1 WHERE cfg.AutomationEnabled=TRUE AND b.Enabled=TRUE AND a.Enabled=TRUE AND a.ArchivedAt IS NULL AND a.PublishMode='AUTO' AND a.ConnectionStatus='CONNECTED' AND a.SessionEncrypted IS NOT NULL AND s.Enabled=TRUE AND s.ArchivedAt IS NULL AND b.PublishTiming='INTERVAL' AND (b.LastDispatchedAt IS NULL OR TIMESTAMPDIFF(MINUTE,b.LastDispatchedAt,NOW(3))>=b.PublishIntervalMinutes) ORDER BY b.SourceId,a.Id")
+    List<Map<String,Object>> findDueIntervalBindings();
+
+    @Select("SELECT a.Id accountId,b.SourceId sourceId,b.PublishTiming publishTiming,b.PublishIntervalMinutes publishIntervalMinutes,b.LastDispatchedAt lastDispatchedAt FROM c_ContentAccountSources b JOIN c_ContentAccounts a ON a.Id=b.AccountId WHERE b.SourceId=#{sourceId} AND b.Enabled=TRUE AND b.PublishTiming='IMMEDIATE' AND a.Enabled=TRUE AND a.ArchivedAt IS NULL AND a.PublishMode='AUTO' AND a.ConnectionStatus='CONNECTED' AND a.SessionEncrypted IS NOT NULL ORDER BY a.Id")
+    List<Map<String,Object>> findImmediateBindings(long sourceId);
+
+    @Update("UPDATE c_ContentAccountSources SET LastDispatchedAt=NOW(3) WHERE AccountId=#{accountId} AND SourceId=#{sourceId}")
+    int markBindingDispatched(@Param("accountId") long accountId,@Param("sourceId") long sourceId);
+
+    @Select("SELECT b.SourceId sourceId,s.Name sourceName,b.Enabled enabled,b.PublishTiming publishTiming,b.PublishIntervalMinutes publishIntervalMinutes,b.LastDispatchedAt lastDispatchedAt FROM c_ContentAccountSources b JOIN c_ContentSources s ON s.Id=b.SourceId WHERE b.AccountId=#{accountId} AND s.ArchivedAt IS NULL ORDER BY s.Name")
+    List<Map<String,Object>> findAccountSourceRules(long accountId);
 
     @Update("UPDATE c_ContentSources SET PollIntervalMinutes=#{minutes}")
     int updateAllSourcePollIntervals(int minutes);
@@ -124,8 +157,11 @@ public interface ContentOperationsMapper {
     @Delete("DELETE FROM c_ContentAccountSources WHERE AccountId=#{accountId}")
     int deleteAccountSources(long accountId);
 
-    @Insert("INSERT INTO c_ContentAccountSources(AccountId,SourceId,Enabled) VALUES(#{accountId},#{sourceId},TRUE)")
-    int insertAccountSource(@Param("accountId") long accountId,@Param("sourceId") long sourceId);
+    @Insert("INSERT INTO c_ContentAccountSources(AccountId,SourceId,Enabled,PublishTiming,PublishIntervalMinutes) VALUES(#{accountId},#{sourceId},#{enabled},#{publishTiming},#{publishIntervalMinutes})")
+    int insertAccountSource(@Param("accountId") long accountId,@Param("sourceId") long sourceId,@Param("enabled") boolean enabled,@Param("publishTiming") String publishTiming,@Param("publishIntervalMinutes") int publishIntervalMinutes);
+
+    @Select("SELECT i.Id id,i.SourceId sourceId,i.ExternalId externalId,i.SourceUrl sourceUrl,i.AuthorName authorName,i.RawText rawText,i.PublishedAt publishedAt,i.ProcessingStatus processingStatus,i.RelevanceStatus relevanceStatus,i.RelevanceScore relevanceScore,i.RelevanceReason relevanceReason,i.RelevanceCheckedAt relevanceCheckedAt,i.CollectedAt collectedAt FROM c_ContentItems i LEFT JOIN c_ContentDrafts d ON d.ContentItemId=i.Id AND d.Platform='XIAOHONGSHU' LEFT JOIN c_ContentPublications p ON p.DraftId=d.Id AND p.AccountId=#{accountId} WHERE i.SourceId=#{sourceId} AND p.Id IS NULL AND COALESCE(i.RelevanceStatus,'PENDING')<>'IRRELEVANT' ORDER BY COALESCE(i.PublishedAt,i.CollectedAt) DESC LIMIT 1")
+    Map<String,Object> findLatestUndispatchedItem(@Param("accountId") long accountId,@Param("sourceId") long sourceId);
 
     @Select("SELECT COUNT(*) FROM c_ContentSources WHERE Id=#{id} AND Enabled=TRUE")
     int countEnabledSource(long id);
