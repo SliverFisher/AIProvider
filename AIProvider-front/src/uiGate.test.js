@@ -129,6 +129,7 @@ describe("UI release gate", () => {
 
   it("keeps content operation dialogs inside the desktop viewport", () => {
     const css = read("ContentOperationsCenter.css");
+    const page = read("ContentOperationsCenter.jsx");
     const shell = read("DesktopShell.css");
     expect(css).toMatch(/\.content-ops-dialog\{[^}]*max-height:\s*calc\(100vh\s*-\s*32px\)/);
     expect(css).toMatch(/\.content-ops-dialog\{[^}]*overflow-y:\s*auto/);
@@ -136,6 +137,13 @@ describe("UI release gate", () => {
     expect(css).toMatch(/\.settings-inline\{[^}]*grid-template-columns:/);
     expect(css).toMatch(/\.collection-history-row\{[^}]*display:grid/);
     expect(css).toMatch(/\.publication-row\{[^}]*width:100%/);
+    expect(css).toMatch(/\.settings-inline\{[^}]*grid-template-columns:max-content 150px 150px 72px/);
+    expect(css).toMatch(/\.settings-inline \.automation-toggle\{[^}]*display:inline-flex!important[^}]*align-items:center/);
+    expect(css).toMatch(/\.settings-inline>button\{[^}]*height:32px[^}]*min-height:32px/);
+    expect(css).toMatch(/\.number-with-unit\{[^}]*grid-template-columns:76px 42px/);
+    expect(css).toMatch(/\.account-source-rules article\{[^}]*grid-template-columns:minmax\(130px,1fr\) 210px 96px/);
+    expect(css).not.toMatch(/\.settings-inline\{[^}]*(?:\.8fr|\.85fr|1fr)/);
+    expect(page).not.toMatch(/<div[^>]+onClick=/);
   });
 
   it("keeps image-workshop detail actions grouped and keyboard accessible", () => {
