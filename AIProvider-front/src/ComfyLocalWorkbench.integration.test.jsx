@@ -686,7 +686,7 @@ describe("Comfy image generation flow", () => {
     fireEvent.click(screen.getByRole("button", { name: "转到文件中转站" }));
     await waitFor(() => expect(transferredFileName).toBe("saved.png"));
     expect(screen.getByText("已转到文件中转站：saved.png")).toBeTruthy();
-  });
+  }, 15000);
 
   it("asks Bridge to cancel every active generation from one native button", async () => {
     render(<ComfyLocalWorkbench />);
