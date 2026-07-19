@@ -55,7 +55,7 @@ describe("UI release gate", () => {
     expect(css).toMatch(/\.file-transfer-table-wrap\{[^}]*overflow:auto/);
     expect(css).not.toMatch(/td:first-child\{[^}]*display:flex/);
     expect(css).toMatch(/\.file-transfer-file-cell\{[^}]*display:flex/);
-    expect(css).toMatch(/\.file-transfer-text-card\{[^}]*grid-template-columns/);
+    expect(css).toMatch(/\.file-transfer-text-card\{[^}]*display:grid[^}]*align-self:start/);
   });
 
   it("keeps mobile navigation reachable and touch-safe", () => {
@@ -128,6 +128,7 @@ describe("UI release gate", () => {
     expect(workbenchCss).toMatch(/\.detail-header-actions\{[^}]*display:flex/);
     expect(workbenchCss).toMatch(/\.detail-close-button:focus-visible/);
     expect(workflowCss).toMatch(/\.workflow-panel__main-model\{grid-column:1\/-1\}/);
+    expect(workflowCss).toMatch(/\.workflow-panel__dimension-field\{[^}]*grid-template-columns:auto minmax\(0,1fr\)/);
   });
 
   it("keeps Bridge task cards native, non-nested interactions", () => {

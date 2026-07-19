@@ -122,10 +122,11 @@ describe("WorkflowPanel generation action", () => {
     const change = vi.fn();
     render(<WorkflowPanel workflows={[{ id: "wf", name: "扩散模型工作流" }]} workflow={{ id: "wf", name: "扩散模型工作流", models: ["flux/default.safetensors"], capabilities: {} }}
       fieldKeys={["batchSize", "checkpoint", "height", "seed", "width"]} fieldSpecs={{ width: {}, height: {}, batchSize: {}, seed: {}, checkpoint: { nodeType: "UNETLoader", input: "unet_name" } }}
-      values={{ width: 1920, height: 1080, batchSize: 1, seed: 123, randomSeed: true, checkpoint: "flux/default.safetensors" }} mainModels={[{ name: "flux/default.safetensors", displayName: "default · flux" }, { name: "flux/dev.safetensors", displayName: "dev · flux" }]}
+      values={{ width: 1024, height: 1024, batchSize: 1, seed: 123, randomSeed: true, checkpoint: "flux/default.safetensors" }} mainModels={[{ name: "flux/default.safetensors", displayName: "default · flux" }, { name: "flux/dev.safetensors", displayName: "dev · flux" }]}
       referenceFiles={{}} presets={[]} presetQuery="" disabled={{ blocked: false, busy: false }} loading={false}
       onWorkflowChange={vi.fn()} onFieldChange={change} onReference={vi.fn()} onPresetChange={vi.fn()} onGenerate={vi.fn()} />);
     const size = screen.getByRole("combobox", { name: "最终输出尺寸" }).closest(".workflow-panel__size");
+    expect(size.querySelectorAll(".workflow-panel__dimension-field")).toHaveLength(2);
     const model = screen.getByRole("combobox", { name: "主模型" });
     const seed = screen.getByText("种子", { exact: true }).closest(".workflow-panel__seed");
     const count = screen.getByRole("spinbutton", { name: "生成数量" });

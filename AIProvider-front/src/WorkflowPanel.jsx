@@ -43,7 +43,8 @@ function NumberField({ fieldKey, fieldSpec, value, onChange }) {
   const max = ["denoise", "secondPassDenoise"].includes(fieldKey) ? 1 : fieldKey === "batchSize" ? 10000 : undefined;
   const dimension = ["width", "height"].includes(fieldKey);
   const label = displayLabel(fieldKey, fieldSpec);
-  return <label className={fieldKey === "batchSize" ? "workflow-panel__inline-field" : undefined}>{label}<input aria-label={label} type="number" min={dimension ? "4" : fieldKey === "batchSize" ? "1" : "0"} max={max} step={dimension ? "4" : decimal ? "0.01" : "1"} value={value ?? ""} onChange={(event) => onChange(fieldKey, event.target.value === "" ? "" : Number(event.target.value))} /></label>;
+  const className = dimension ? "workflow-panel__dimension-field" : fieldKey === "batchSize" ? "workflow-panel__inline-field" : undefined;
+  return <label className={className}>{label}<input aria-label={label} type="number" min={dimension ? "4" : fieldKey === "batchSize" ? "1" : "0"} max={max} step={dimension ? "4" : decimal ? "0.01" : "1"} value={value ?? ""} onChange={(event) => onChange(fieldKey, event.target.value === "" ? "" : Number(event.target.value))} /></label>;
 }
 
 function SelectField({ fieldKey, value, onChange }) {
