@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import FavoriteMediaLibrary from "./FavoriteMediaLibrary";
 
-const item = { id: 7, title: "星夜海岸", originalFileName: "coast.png", mediaType: "image", contentType: "image/png", fileSize: 4096, width: 1920, height: 1080, contentUrl: "/api/favorites/7/content", createdAt: "2026-07-20T01:00:00" };
+const item = { id: 7, title: "星夜海岸", originalFileName: "coast.png", mediaType: "image", contentType: "image/png", fileSize: 4096, width: 1920, height: 1080, contentUrl: "/api/favorites/7/content", thumbnailUrl: "/api/favorites/7/thumbnail", createdAt: "2026-07-20T01:00:00" };
 const jsonResponse = (data) => Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(data) });
 
 beforeEach(() => {
@@ -25,7 +25,7 @@ describe("FavoriteMediaLibrary", () => {
     expect(await screen.findByText("星夜海岸")).toBeTruthy();
     const search = screen.getByRole("textbox", { name: "搜索我的最爱" });
     fireEvent.change(search, { target: { value: "不存在" } });
-    expect(screen.getByText("没有找到匹配的图片")).toBeTruthy();
+    expect(screen.getByText("没有找到匹配的媒体")).toBeTruthy();
     fireEvent.change(search, { target: { value: "海岸" } });
     expect(screen.getByText("星夜海岸")).toBeTruthy();
   });

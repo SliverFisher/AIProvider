@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowClockwise, ArrowsLeftRight, ArrowCounterClockwise, CaretLeft, CaretRight, CheckCircle, Desktop, DotsThree, ImageSquare, MagnifyingGlassMinus, MagnifyingGlassPlus, Star, Trash, UploadSimple, X } from "@phosphor-icons/react";
+import { ArrowClockwise, ArrowsLeftRight, ArrowCounterClockwise, CaretLeft, CaretRight, CheckCircle, Desktop, DotsThree, ImageSquare, MagnifyingGlassMinus, MagnifyingGlassPlus, Play, Star, Trash, UploadSimple, X } from "@phosphor-icons/react";
 import { TransformComponent, TransformWrapper } from "react-zoom-pan-pinch";
 import UiSearchField from "./UiSearchField";
 import UiToast from "./UiToast";
@@ -7,6 +7,12 @@ import { readJsonResponse } from "./apiResponse";
 import "./FavoriteMediaLibrary.css";
 
 const VIEWER_ZOOM_STEP = 0.2;
+const IMAGE_TYPES = ["image/png", "image/jpeg", "image/webp", "image/gif"];
+const VIDEO_TYPES = ["video/mp4", "video/webm", "video/quicktime"];
+const ACCEPTED_TYPES = [...IMAGE_TYPES, ...VIDEO_TYPES];
+const ACCEPT_ATTR = [...IMAGE_TYPES, ...VIDEO_TYPES].join(",");
+const isVideoItem = (item) => item?.mediaType === "video" || String(item?.contentType || "").startsWith("video/");
+const isVideoFile = (file) => file && (file.type ? String(file.type).startsWith("video/") : /\.(mp4|webm|mov)$/i.test(file.name));
 
 const BRIDGE = "http://127.0.0.1:32145";
 const formatSize = (value) => {
@@ -100,6 +106,16 @@ export default function FavoriteMediaLibrary() {
     const keyword = query.trim().toLocaleLowerCase();
     return keyword ? items.filter((item) => [item.title, item.originalFileName, item.prompt].some((value) => String(value || "").toLocaleLowerCase().includes(keyword))) : items;
   }, [items, query]);
+  useEffect(() => {
+    if (previewIndex === null) return;
+    const onKey = (event) => {
+      if (event.key === "ArrowLeft") { event.preventDefault(); navigatePreview(-1); }
+      else if (event.key === "ArrowRight") { event.preventDefault(); navigatePreview(1); }
+      else if (event.key === "Escape") { event.preventDefault(); closePreview(); }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [previewIndex, filtered.length]);
   const allSelected = filtered.length > 0 && filtered.every((item) => selected.has(item.id));
   const toggle = (id) => setSelected((current) => {
     const next = new Set(current); if (next.has(id)) next.delete(id); else next.add(id); return next;
@@ -113,17 +129,20 @@ export default function FavoriteMediaLibrary() {
     try {
       const uploaded = [];
       for (let index = 0; index < files.length; index++) {
-        const form = new FormData(); form.append("file", files[index], files[index].name);
-        form.append("title", files[index].name.replace(/\.[^.]+$/, ""));
-        const dimensions = await createImageBitmap(files[index]);
-        form.append("width", String(dimensions.width)); form.append("height", String(dimensions.height)); dimensions.close();
+        const file = files[index];
+        const form = new FormData(); form.append("file", file, file.name);
+        form.append("title", file.name.replace(/\.[^.]+$/, ""));
+        if (!isVideoFile(file)) {
+          const dimensions = await createImageBitmap(file);
+          form.append("width", String(dimensions.width)); form.append("height", String(dimensions.height)); dimensions.close();
+        }
         const response = await fetch("/api/favorites", { method: "POST", body: form });
         const result = await readJsonResponse(response, "我的最爱上传接口响应异常");
-        if (!response.ok || result.code !== 200) throw new Error(`${files[index].name}：${result.message || "上传失败"}`);
+        if (!response.ok || result.code !== 200) throw new Error(`${file.name}：${result.message || "上传失败"}`);
         uploaded.push(result.data); setUploading({ active: true, done: index + 1, total: files.length });
       }
       setItems((current) => [...new Map([...uploaded, ...current].map((item) => [item.id, item])).values()]);
-      setNotice(`已保存 ${uploaded.length} 张图片到服务器`);
+      setNotice(`已保存 ${uploaded.length} 个媒体到服务器`);
     } catch (exception) { setError(`上传失败：${exception.message}`); }
     finally { setUploading({ active: false, done: 0, total: 0 }); if (inputRef.current) inputRef.current.value = ""; }
   };
@@ -177,11 +196,7 @@ export default function FavoriteMediaLibrary() {
     <div className="favorite-hero">
       <div className="favorite-hero-text">
         <div className="favorite-hero-badge"><Star weight="fill" /></div>
-        <div>
-          <span className="favorite-hero-eyebrow"><Star weight="fill" /> Private Media Library</span>
-          <h2>把真正喜欢的画面，留在自己的空间里。</h2>
-          <p>原图保存在服务器。当前开放图片，视频媒体能力已经预留。</p>
-        </div>
+        <span className="favorite-hero-eyebrow"><Star weight="fill" /> Private Media Library</span>
       </div>
       <div className="favorite-hero-stats">
         <div className="favorite-hero-stat"><strong>{items.length}</strong><span>张服务器原图</span><small>{items.reduce((sum, item) => sum + Number(item.fileSize || 0), 0) ? formatSize(items.reduce((sum, item) => sum + Number(item.fileSize || 0), 0)) : "等待第一张图片"}</small></div>
@@ -197,16 +212,16 @@ export default function FavoriteMediaLibrary() {
           <button type="button" onClick={() => { setSelectionMode(false); setSelected(new Set()); }}><X />完成</button>
         </> : <button type="button" onClick={() => setSelectionMode(true)}><CheckCircle />选择</button>}
         <button type="button" onClick={load} disabled={state === "loading"}><ArrowClockwise />刷新</button>
-        <button type="button" className="primary" onClick={() => inputRef.current?.click()} disabled={uploading.active}><UploadSimple />{uploading.active ? `${uploading.done}/${uploading.total}` : "上传图片"}</button>
-        <input ref={inputRef} className="favorite-file-input" type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple onChange={(event) => uploadFiles(event.target.files)} />
+        <button type="button" className="primary" onClick={() => inputRef.current?.click()} disabled={uploading.active}><UploadSimple />{uploading.active ? `${uploading.done}/${uploading.total}` : "上传"}</button>
+        <input ref={inputRef} className="favorite-file-input" type="file" accept={ACCEPT_ATTR} multiple onChange={(event) => uploadFiles(event.target.files)} />
       </div>
     </div>
 
     <UiToast message={error || notice} tone={error ? "error" : "success"} onDismiss={() => { setError(""); setNotice(""); }} />
     {state === "loading" && !items.length ? <div className="favorite-empty"><Star /><strong>正在打开你的私人画廊…</strong></div>
-      : !filtered.length ? <div className="favorite-empty"><ImageSquare /><strong>{query ? "没有找到匹配的图片" : "这里还没有喜欢的画面"}</strong><span>{query ? "换一个关键词试试" : "可以直接上传，或从图像工坊的“我的资产”批量转入"}</span>{!query && <button type="button" className="primary" onClick={() => inputRef.current?.click()}><UploadSimple />上传第一张图片</button>}</div>
+      : !filtered.length ? <div className="favorite-empty"><ImageSquare /><strong>{query ? "没有找到匹配的媒体" : "这里还没有喜欢的画面"}</strong><span>{query ? "换一个关键词试试" : "可以直接上传，或从图像工坊的“我的资产”批量转入"}</span>{!query && <button type="button" className="primary" onClick={() => inputRef.current?.click()}><UploadSimple />上传第一个媒体</button>}</div>
         : <div className="favorite-grid">{filtered.map((item, index) => <article className="favorite-card" key={item.id} data-selected={selected.has(item.id)}>
-          <button type="button" className="favorite-image" aria-label={`预览 ${item.title}`} onClick={() => selectionMode ? toggle(item.id) : openPreview(index)} onContextMenu={(event) => { event.preventDefault(); setMenu({ item, x: Math.min(event.clientX, window.innerWidth - 210), y: Math.min(event.clientY, window.innerHeight - 150) }); }}><img src={item.contentUrl} alt="" loading="lazy" /></button>
+          <button type="button" className="favorite-image" aria-label={`预览 ${item.title}`} onClick={() => selectionMode ? toggle(item.id) : openPreview(index)} onContextMenu={(event) => { event.preventDefault(); setMenu({ item, x: Math.min(event.clientX, window.innerWidth - 210), y: Math.min(event.clientY, window.innerHeight - 150) }); }}>{isVideoItem(item) ? <><img src={item.thumbnailUrl || item.contentUrl} alt="" loading="lazy" /><span className="favorite-video-badge"><Play weight="fill" /></span></> : <img src={item.thumbnailUrl || item.contentUrl} alt="" loading="lazy" />}</button>
           <button type="button" className="favorite-select" aria-label={`${selected.has(item.id) ? "取消选择" : "选择"} ${item.title}`} onClick={() => { setSelectionMode(true); toggle(item.id); }}><i>{selected.has(item.id) ? "✓" : ""}</i></button>
           <button type="button" className="favorite-more" aria-label={`${item.title} 更多操作`} onClick={(event) => { event.stopPropagation(); const box = event.currentTarget.getBoundingClientRect(); setMenu({ item, x: Math.min(box.right - 190, window.innerWidth - 210), y: Math.min(box.bottom + 6, window.innerHeight - 150) }); }}><DotsThree weight="bold" /></button>
           <div className="favorite-card-meta"><strong>{item.title}</strong><span>{formatDate(item.createdAt)} · {formatSize(item.fileSize)}</span></div>
@@ -221,12 +236,14 @@ export default function FavoriteMediaLibrary() {
       <div className="favorite-preview-panel">
         <header className="favorite-preview-header">
           <div className="favorite-preview-tools">
-            <button type="button" aria-label="缩小图片" title="缩小 (每次 20%)" onClick={() => viewerTransform.current?.zoomOut(VIEWER_ZOOM_STEP, 120, "easeOut")}><MagnifyingGlassMinus /></button>
-            <button type="button" aria-label="恢复原始大小和位置" title="恢复原位" onClick={() => viewerTransform.current?.resetTransform(140, "easeOut")}><ArrowCounterClockwise /></button>
-            <button type="button" aria-label="放大图片" title="放大 (每次 20%)" onClick={() => viewerTransform.current?.zoomIn(VIEWER_ZOOM_STEP, 120, "easeOut")}><MagnifyingGlassPlus /></button>
-            <button type="button" aria-label="顺时针旋转图片 90 度" title="顺时针旋转 90°" onClick={() => setViewerOrientation((current) => ({ ...current, rotation: (current.rotation + 90) % 360 }))}><ArrowClockwise /></button>
-            <button type="button" aria-pressed={viewerOrientation.mirrored} aria-label="水平镜像图片" title="水平镜像" onClick={() => setViewerOrientation((current) => ({ ...current, mirrored: !current.mirrored }))}><ArrowsLeftRight /></button>
-            <small>滚轮缩放 · 双击切换 · 每次步进 20%</small>
+            {isVideoItem(filtered[previewIndex]) ? <small>← / → 切换 · Esc 关闭</small> : <>
+              <button type="button" aria-label="缩小图片" title="缩小 (每次 20%)" onClick={() => viewerTransform.current?.zoomOut(VIEWER_ZOOM_STEP, 120, "easeOut")}><MagnifyingGlassMinus /></button>
+              <button type="button" aria-label="恢复原始大小和位置" title="恢复原位" onClick={() => viewerTransform.current?.resetTransform(140, "easeOut")}><ArrowCounterClockwise /></button>
+              <button type="button" aria-label="放大图片" title="放大 (每次 20%)" onClick={() => viewerTransform.current?.zoomIn(VIEWER_ZOOM_STEP, 120, "easeOut")}><MagnifyingGlassPlus /></button>
+              <button type="button" aria-label="顺时针旋转图片 90 度" title="顺时针旋转 90°" onClick={() => setViewerOrientation((current) => ({ ...current, rotation: (current.rotation + 90) % 360 }))}><ArrowClockwise /></button>
+              <button type="button" aria-pressed={viewerOrientation.mirrored} aria-label="水平镜像图片" title="水平镜像" onClick={() => setViewerOrientation((current) => ({ ...current, mirrored: !current.mirrored }))}><ArrowsLeftRight /></button>
+              <small>滚轮缩放 · 双击切换 · ← / → 切换 · Esc 关闭</small>
+            </>}
           </div>
           <div className="favorite-preview-title" title={filtered[previewIndex].originalFileName || filtered[previewIndex].title}>
             <strong>{filtered[previewIndex].title}</strong>
@@ -234,43 +251,53 @@ export default function FavoriteMediaLibrary() {
             <small>{filtered[previewIndex].originalFileName} · {formatSize(filtered[previewIndex].fileSize)} · {formatDate(filtered[previewIndex].createdAt)}</small>
           </div>
           <div className="favorite-preview-actions">
-            <button type="button" aria-label="上一张图片" title="上一张" onClick={() => navigatePreview(-1)} disabled={filtered.length <= 1}><CaretLeft /></button>
-            <button type="button" aria-label="下一张图片" title="下一张" onClick={() => navigatePreview(1)} disabled={filtered.length <= 1}><CaretRight /></button>
             <button type="button" aria-label="应用为壁纸" title="应用为壁纸" onClick={() => openWallpaper(filtered[previewIndex])}><Desktop /></button>
-            <button type="button" aria-label="关闭预览" title="关闭预览" onClick={closePreview}><X /></button>
+            <button type="button" aria-label="关闭预览" title="关闭预览 (Esc)" onClick={closePreview}><X /></button>
           </div>
         </header>
         <div className="favorite-preview-stage">
-          <TransformWrapper
-            ref={viewerTransform}
-            initialScale={1}
-            minScale={1}
-            maxScale={8}
-            centerOnInit
-            centerZoomedOut
-            limitToBounds
-            disablePadding
-            smooth={false}
-            wheel={{ step: VIEWER_ZOOM_STEP }}
-            doubleClick={{ mode: "toggle", step: 1, animationTime: 180, animationType: "easeOut" }}
-            zoomAnimation={{ animationTime: 160, animationType: "easeOut" }}
-            panning={{ velocityDisabled: false }}
-          >
-            {() => (
-              <TransformComponent wrapperClass="favorite-preview-zoom" contentClass="favorite-preview-zoom-content">
-                <img
-                  className={`favorite-preview-image ${viewerOrientation.rotation % 180 ? "is-quarter-turn" : ""}`}
-                  style={{ transform: `rotate(${viewerOrientation.rotation}deg) scaleX(${viewerOrientation.mirrored ? -1 : 1})` }}
-                  src={filtered[previewIndex].contentUrl}
-                  alt={filtered[previewIndex].title}
-                  draggable={false}
-                />
-              </TransformComponent>
-            )}
-          </TransformWrapper>
+          {isVideoItem(filtered[previewIndex]) ? (
+            <video
+              className="favorite-preview-video"
+              src={filtered[previewIndex].contentUrl}
+              poster={filtered[previewIndex].thumbnailUrl || undefined}
+              controls
+              autoPlay
+              loop
+              preload="metadata"
+            />
+          ) : (
+            <TransformWrapper
+              ref={viewerTransform}
+              initialScale={1}
+              minScale={1}
+              maxScale={8}
+              centerOnInit
+              centerZoomedOut
+              limitToBounds
+              disablePadding
+              smooth={false}
+              wheel={{ step: VIEWER_ZOOM_STEP }}
+              doubleClick={{ mode: "toggle", step: 1, animationTime: 180, animationType: "easeOut" }}
+              zoomAnimation={{ animationTime: 160, animationType: "easeOut" }}
+              panning={{ velocityDisabled: false }}
+            >
+              {() => (
+                <TransformComponent wrapperClass="favorite-preview-zoom" contentClass="favorite-preview-zoom-content">
+                  <img
+                    className={`favorite-preview-image ${viewerOrientation.rotation % 180 ? "is-quarter-turn" : ""}`}
+                    style={{ transform: `rotate(${viewerOrientation.rotation}deg) scaleX(${viewerOrientation.mirrored ? -1 : 1})` }}
+                    src={filtered[previewIndex].contentUrl}
+                    alt={filtered[previewIndex].title}
+                    draggable={false}
+                  />
+                </TransformComponent>
+              )}
+            </TransformWrapper>
+          )}
           {filtered.length > 1 && <>
-            <button type="button" className="favorite-preview-nav prev" aria-label="上一张图片" onClick={() => navigatePreview(-1)}><CaretLeft /></button>
-            <button type="button" className="favorite-preview-nav next" aria-label="下一张图片" onClick={() => navigatePreview(1)}><CaretRight /></button>
+            <button type="button" className="favorite-preview-nav prev" aria-label="上一张" onClick={() => navigatePreview(-1)}><CaretLeft /></button>
+            <button type="button" className="favorite-preview-nav next" aria-label="下一张" onClick={() => navigatePreview(1)}><CaretRight /></button>
           </>}
         </div>
         <footer className="favorite-preview-footer">

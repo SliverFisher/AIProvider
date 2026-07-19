@@ -16,14 +16,24 @@ public class FavoriteMediaVO {
     private final String sourcePlatform;
     private final LocalDateTime createdAt;
     private final String contentUrl;
+    private final String thumbnailUrl;
 
     public FavoriteMediaVO(long id, Long assetId, String originalFileName, String title, String mediaType,
                            String contentType, long fileSize, Integer width, Integer height, String prompt,
                            String sourcePlatform, LocalDateTime createdAt) {
+        this(id, assetId, originalFileName, title, mediaType, contentType, fileSize, width, height,
+                prompt, sourcePlatform, createdAt, false);
+    }
+
+    public FavoriteMediaVO(long id, Long assetId, String originalFileName, String title, String mediaType,
+                           String contentType, long fileSize, Integer width, Integer height, String prompt,
+                           String sourcePlatform, LocalDateTime createdAt, boolean hasThumbnail) {
         this.id = id; this.assetId = assetId; this.originalFileName = originalFileName; this.title = title;
         this.mediaType = mediaType; this.contentType = contentType; this.fileSize = fileSize;
         this.width = width; this.height = height; this.prompt = prompt; this.sourcePlatform = sourcePlatform;
-        this.createdAt = createdAt; this.contentUrl = "/api/favorites/" + id + "/content";
+        this.createdAt = createdAt;
+        this.contentUrl = "/api/favorites/" + id + "/content";
+        this.thumbnailUrl = hasThumbnail ? "/api/favorites/" + id + "/thumbnail" : null;
     }
     public long getId() { return id; }
     public Long getAssetId() { return assetId; }
@@ -38,4 +48,5 @@ public class FavoriteMediaVO {
     public String getSourcePlatform() { return sourcePlatform; }
     public LocalDateTime getCreatedAt() { return createdAt; }
     public String getContentUrl() { return contentUrl; }
+    public String getThumbnailUrl() { return thumbnailUrl; }
 }

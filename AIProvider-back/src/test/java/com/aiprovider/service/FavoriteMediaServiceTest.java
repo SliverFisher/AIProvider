@@ -29,7 +29,7 @@ class FavoriteMediaServiceTest {
         when(repository.findBySha256(anyString())).thenReturn(null);
         when(repository.insert(any())).thenAnswer(invocation -> { invocation.<FavoriteMediaMapper.Row>getArgument(0).setId(31L); return 1; });
         when(repository.findById(31)).thenReturn(row(31L, "ab/file.png"));
-        FavoriteMediaService service = new FavoriteMediaService(repository, assets, directory.toString());
+        FavoriteMediaService service = new FavoriteMediaService(repository, assets, directory.toString(), "ffmpeg");
 
         FavoriteMediaVO saved = service.upload(new MockMultipartFile("file", "海岸.png", "image/png", PNG), 9L, "海岸", 1920, 1080, "ocean", "Windows");
 
@@ -39,13 +39,16 @@ class FavoriteMediaServiceTest {
         verify(repository).insert(captor.capture());
         assertThat(captor.getValue().getAssetId()).isEqualTo(9L);
         assertThat(captor.getValue().getStoragePath()).matches("[0-9a-f]{2}/[0-9a-f]{64}\\.png");
+        assertThat(captor.getValue().getMediaType()).isEqualTo("image");
+        // PNG 头几字节不足以让 ImageIO 解码，缩略图生成会失败并回退到 null，不影响主流程
+        assertThat(captor.getValue().getThumbnailPath()).isNull();
         assertThat(Files.walk(directory).filter(Files::isRegularFile)).hasSize(1);
     }
 
     @Test void rejectsFilesWhoseBytesAreNotASupportedImage() {
-        FavoriteMediaService service = new FavoriteMediaService(mock(FavoriteMediaRepository.class), mock(AssetRepository.class), directory.toString());
+        FavoriteMediaService service = new FavoriteMediaService(mock(FavoriteMediaRepository.class), mock(AssetRepository.class), directory.toString(), "ffmpeg");
         assertThatThrownBy(() -> service.upload(new MockMultipartFile("file", "fake.png", "image/png", "not image".getBytes()), null, null, null, null, null, null))
-                .isInstanceOf(IllegalArgumentException.class).hasMessage("当前仅支持真实的 PNG、JPEG、WEBP 或 GIF 图片");
+                .isInstanceOf(IllegalArgumentException.class).hasMessage("当前仅支持 PNG、JPEG、WEBP、GIF 图片或 MP4、WEBM、MOV 视频");
     }
 
     @Test void removesBothDatabaseRecordAndStoredFile() throws Exception {
@@ -53,7 +56,7 @@ class FavoriteMediaServiceTest {
         Path stored = directory.resolve("ab/file.png"); Files.createDirectories(stored.getParent()); Files.write(stored, PNG);
         when(repository.findById(31)).thenReturn(row(31L, "ab/file.png"));
         when(repository.deleteByIds(Collections.singletonList(31L))).thenReturn(1);
-        FavoriteMediaService service = new FavoriteMediaService(repository, mock(AssetRepository.class), directory.toString());
+        FavoriteMediaService service = new FavoriteMediaService(repository, mock(AssetRepository.class), directory.toString(), "ffmpeg");
         assertThat(service.delete(Collections.singletonList(31L))).isEqualTo(1);
         assertThat(stored).doesNotExist();
     }

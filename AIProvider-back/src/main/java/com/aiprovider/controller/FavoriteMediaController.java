@@ -41,13 +41,15 @@ public class FavoriteMediaController {
     @GetMapping("/{id}/content")
     public ResponseEntity<org.springframework.core.io.Resource> content(@PathVariable long id) throws IOException {
         FavoriteMediaContent content = service.content(id);
-        MediaType mediaType;
-        try { mediaType = MediaType.parseMediaType(content.getContentType()); }
-        catch (IllegalArgumentException exception) { mediaType = MediaType.APPLICATION_OCTET_STREAM; }
-        ContentDisposition disposition = ContentDisposition.inline()
-                .filename(content.getFileName(), StandardCharsets.UTF_8).build();
-        return ResponseEntity.ok().contentType(mediaType).contentLength(content.getFileSize())
-                .header(HttpHeaders.CONTENT_DISPOSITION, disposition.toString())
+        return response(content, true);
+    }
+
+    @GetMapping("/{id}/thumbnail")
+    public ResponseEntity<org.springframework.core.io.Resource> thumbnail(@PathVariable long id) throws IOException {
+        FavoriteMediaContent content = service.thumbnail(id);
+        // 缩略图长期缓存：1 天
+        return ResponseEntity.ok().contentType(MediaType.parseMediaType(content.getContentType()))
+                .contentLength(content.getFileSize())
                 .header(HttpHeaders.CACHE_CONTROL, "private, max-age=86400")
                 .body(content.getResource());
     }
@@ -55,5 +57,17 @@ public class FavoriteMediaController {
     @DeleteMapping
     public Result<Map<String,Integer>> delete(@RequestBody FavoriteMediaDeleteDTO dto) throws IOException {
         return Result.success(Collections.singletonMap("deleted", service.delete(dto == null ? null : dto.getIds())));
+    }
+
+    private ResponseEntity<org.springframework.core.io.Resource> response(FavoriteMediaContent content, boolean inline) {
+        MediaType mediaType;
+        try { mediaType = MediaType.parseMediaType(content.getContentType()); }
+        catch (IllegalArgumentException exception) { mediaType = MediaType.APPLICATION_OCTET_STREAM; }
+        ContentDisposition disposition = (inline ? ContentDisposition.inline() : ContentDisposition.attachment())
+                .filename(content.getFileName(), StandardCharsets.UTF_8).build();
+        return ResponseEntity.ok().contentType(mediaType).contentLength(content.getFileSize())
+                .header(HttpHeaders.CONTENT_DISPOSITION, disposition.toString())
+                .header(HttpHeaders.CACHE_CONTROL, "private, max-age=86400")
+                .body(content.getResource());
     }
 }
