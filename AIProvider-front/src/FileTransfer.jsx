@@ -1,0 +1,144 @@
+import { useCallback, useEffect, useRef, useState } from "react";
+import { ArrowClockwise, DownloadSimple, File, TrayArrowUp, Trash } from "@phosphor-icons/react";
+import { readJsonResponse } from "./apiResponse";
+import "./FileTransfer.css";
+
+const API = "/api/file-transfer";
+
+function formatSize(bytes) {
+  const value = Number(bytes || 0);
+  if (value < 1024) return `${value} B`;
+  const units = ["KB", "MB", "GB", "TB"];
+  let size = value / 1024;
+  let unit = 0;
+  while (size >= 1024 && unit < units.length - 1) { size /= 1024; unit += 1; }
+  return `${size >= 100 ? size.toFixed(0) : size >= 10 ? size.toFixed(1) : size.toFixed(2)} ${units[unit]}`;
+}
+
+function uploadFile(file, onProgress) {
+  return new Promise((resolve, reject) => {
+    const request = new XMLHttpRequest();
+    request.open("POST", `${API}/upload`);
+    request.responseType = "json";
+    request.upload.onprogress = (event) => {
+      if (event.lengthComputable) onProgress(Math.round((event.loaded / event.total) * 100));
+    };
+    request.onload = () => {
+      const body = request.response;
+      if (request.status >= 200 && request.status < 300 && body?.code === 200) resolve(body.data);
+      else reject(new Error(body?.message || `上传失败 · HTTP ${request.status}`));
+    };
+    request.onerror = () => reject(new Error("上传连接中断"));
+    const form = new FormData();
+    form.append("file", file, file.name);
+    request.send(form);
+  });
+}
+
+export default function FileTransfer() {
+  const inputRef = useRef(null);
+  const [files, setFiles] = useState([]);
+  const [state, setState] = useState("loading");
+  const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+  const [dragActive, setDragActive] = useState(false);
+  const [uploading, setUploading] = useState({ active: false, name: "", index: 0, total: 0, percent: 0 });
+  const [deleting, setDeleting] = useState("");
+
+  const load = useCallback(async () => {
+    setState("loading");
+    setError("");
+    try {
+      const response = await fetch(`${API}/files`);
+      const body = await readJsonResponse(response, "文件列表响应异常");
+      if (!response.ok || body.code !== 200) throw new Error(body.message || `读取失败 · HTTP ${response.status}`);
+      setFiles(body.data || []);
+      setState("ready");
+    } catch (exception) {
+      setError(exception.message);
+      setState("error");
+    }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const submitFiles = async (selected) => {
+    const next = Array.from(selected || []);
+    if (!next.length || uploading.active) return;
+    setError("");
+    setNotice("");
+    try {
+      for (let index = 0; index < next.length; index += 1) {
+        const file = next[index];
+        setUploading({ active: true, name: file.name, index: index + 1, total: next.length, percent: 0 });
+        await uploadFile(file, (percent) => setUploading((current) => ({ ...current, percent })));
+      }
+      setNotice(`已上传 ${next.length} 个文件`);
+      await load();
+    } catch (exception) {
+      setError(exception.message);
+    } finally {
+      setUploading({ active: false, name: "", index: 0, total: 0, percent: 0 });
+      if (inputRef.current) inputRef.current.value = "";
+    }
+  };
+
+  const remove = async (fileName) => {
+    if (!window.confirm(`确定删除“${fileName}”吗？`)) return;
+    setDeleting(fileName);
+    setError("");
+    setNotice("");
+    try {
+      const response = await fetch(`${API}/${encodeURIComponent(fileName)}`, { method: "DELETE" });
+      const body = await readJsonResponse(response, "删除响应异常");
+      if (!response.ok || body.code !== 200) throw new Error(body.message || `删除失败 · HTTP ${response.status}`);
+      setNotice(`已删除 ${fileName}`);
+      await load();
+    } catch (exception) {
+      setError(exception.message);
+    } finally {
+      setDeleting("");
+    }
+  };
+
+  return <section className="file-transfer-page" aria-label="文件中转">
+    <div className="file-transfer-toolbar">
+      <div><strong>服务器文件夹</strong><span>同名文件会直接覆盖，仅手动删除</span></div>
+      <button type="button" onClick={load} disabled={state === "loading" || uploading.active}><ArrowClockwise />刷新列表</button>
+    </div>
+
+    <label className={`file-transfer-dropzone${dragActive ? " is-dragging" : ""}${uploading.active ? " is-uploading" : ""}`}
+      onDragEnter={(event) => { event.preventDefault(); setDragActive(true); }}
+      onDragOver={(event) => event.preventDefault()}
+      onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) setDragActive(false); }}
+      onDrop={(event) => { event.preventDefault(); setDragActive(false); submitFiles(event.dataTransfer.files); }}>
+      <input ref={inputRef} type="file" multiple disabled={uploading.active} onChange={(event) => submitFiles(event.target.files)} />
+      <TrayArrowUp weight="duotone" />
+      <strong>{uploading.active ? uploading.name : "点击选择文件，或拖到这里"}</strong>
+      <span>{uploading.active ? `正在上传 ${uploading.index} / ${uploading.total}` : "不限类型、大小和数量"}</span>
+      {uploading.active && <progress max="100" value={uploading.percent} aria-label={`${uploading.name} 上传进度`}>{uploading.percent}%</progress>}
+      {uploading.active && <em>{uploading.percent}%</em>}
+    </label>
+
+    {(error || notice) && <div className={`file-transfer-message${error ? " is-error" : " is-success"}`} role={error ? "alert" : "status"}>{error || notice}</div>}
+
+    <div className="file-transfer-list-card">
+      <header><strong>现有文件</strong><span>{state === "ready" ? `${files.length} 个` : "读取中"}</span></header>
+      {state === "loading" && <div className="file-transfer-state" role="status">正在读取服务器文件…</div>}
+      {state === "error" && <div className="file-transfer-state is-error"><span>文件列表读取失败</span><button type="button" onClick={load}>重新加载</button></div>}
+      {state === "ready" && files.length === 0 && <div className="file-transfer-state"><File weight="duotone" /><span>服务器文件夹为空</span></div>}
+      {state === "ready" && files.length > 0 && <div className="file-transfer-table-wrap"><table>
+        <thead><tr><th>文件名</th><th>大小</th><th>上传时间</th><th>操作</th></tr></thead>
+        <tbody>{files.map((file) => <tr key={file.fileName}>
+          <td><File /><span title={file.fileName}>{file.fileName}</span></td>
+          <td>{formatSize(file.fileSize)}</td>
+          <td>{new Date(file.uploadedAt).toLocaleString("zh-CN", { hour12: false })}</td>
+          <td><div className="file-transfer-actions">
+            <a href={`${API}/download/${encodeURIComponent(file.fileName)}`} download={file.fileName}><DownloadSimple />下载</a>
+            <button type="button" className="danger" disabled={deleting === file.fileName} onClick={() => remove(file.fileName)}><Trash />{deleting === file.fileName ? "删除中" : "删除"}</button>
+          </div></td>
+        </tr>)}</tbody>
+      </table></div>}
+    </div>
+  </section>;
+}

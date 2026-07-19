@@ -35,23 +35,23 @@ public class PromptTranslationService {
             Map<String, String> positive = new LinkedHashMap<>();
             Map<String, String> negative = new LinkedHashMap<>();
             for (Map<String, Object> row : repository.findEnabledOptions()) {
-                addTerms(positive, text(row.get("positivePrompt")), text(row.get("name")));
-                addTerms(negative, text(row.get("negativePrompt")), text(row.get("name")));
+                addTerms(positive, text(row.get("positivePrompt")), text(row.get("name")), true);
+                addTerms(negative, text(row.get("negativePrompt")), text(row.get("name")), false);
             }
             for (Map<String, Object> row : repository.findEnabledNegativeOptions())
-                addTerms(negative, text(row.get("negativePrompt")), text(row.get("name")));
+                addTerms(negative, text(row.get("negativePrompt")), text(row.get("name")), false);
             catalog = new TranslationCatalog(Map.copyOf(positive), Map.copyOf(negative));
             return catalog;
         }
     }
 
-    private void addTerms(Map<String, String> target, String prompt, String name) {
+    private void addTerms(Map<String, String> target, String prompt, String name, boolean alwaysShowOriginal) {
         if (prompt == null || name == null || name.isBlank()) return;
         String[] terms = prompt.split(",");
         for (String term : terms) {
             String clean = normalizeTerm(term);
             if (clean.isEmpty()) continue;
-            String label = terms.length == 1 ? name.trim() : name.trim() + "（" + clean + "）";
+            String label = alwaysShowOriginal || terms.length > 1 ? name.trim() + "（" + clean + "）" : name.trim();
             target.putIfAbsent(clean.toLowerCase(Locale.US), label);
         }
     }

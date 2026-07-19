@@ -16,6 +16,7 @@ import {
   PaperPlaneTilt,
   Power,
   SpinnerGap,
+  TrayArrowUp,
   Trash,
   Warning,
   X,
@@ -2362,6 +2363,33 @@ export default function ComfyLocalWorkbench({ mode = "workbench", active = true 
     setImageMenu(null);
     await openTwitterTask([entry]);
   };
+  const contextTransfer = async () => {
+    const entry = contextEntry();
+    if (!entry) return;
+    setImageMenu(null);
+    setError("");
+    setNotice("");
+    try {
+      const fileName = entry.image.filename || entry.image.fileName || entry.image.path?.split(/[\\/]/).pop();
+      if (!fileName) throw new Error("图片没有可用的原始文件名");
+      let blob = entry.image.blob;
+      if (!(blob instanceof Blob)) {
+        const imageSource = entry.image.url || entry.image.localUrl;
+        if (!imageSource) throw new Error("图片没有可读取的地址");
+        const imageResponse = await fetch(imageSource);
+        if (!imageResponse.ok) throw new Error(`读取图片失败 · HTTP ${imageResponse.status}`);
+        blob = await imageResponse.blob();
+      }
+      const form = new FormData();
+      form.append("file", blob, fileName);
+      const response = await fetch("/api/file-transfer/upload", { method: "POST", body: form });
+      const data = await readJson(response, "文件中转上传接口");
+      if (!response.ok || data.code !== 200) throw new Error(data.message || "上传失败");
+      setNotice(`已转到文件中转站：${fileName}`);
+    } catch (exception) {
+      setError(`转到文件中转站失败：${exception.message}`);
+    }
+  };
   const moveEntriesToTrash = async (entries) => {
     const localPaths = entries.filter(({ item }) => item.source !== "asset").map(({ image }) => image.path);
     const assetIds = [...new Set(entries.filter(({ item }) => item.source === "asset").map(({ item }) => item.assetId).filter(Boolean))];
@@ -2886,7 +2914,7 @@ export default function ComfyLocalWorkbench({ mode = "workbench", active = true 
                     onDragEnd={() => { draggedHistoryImage.current = null; }}
                     onContextMenu={(event) => {
                       event.preventDefault();
-                      setImageMenu({ x: Math.min(event.clientX, window.innerWidth - 190), y: Math.min(event.clientY, window.innerHeight - 230), item, image });
+                      setImageMenu({ x: Math.min(event.clientX, window.innerWidth - 190), y: Math.min(event.clientY, window.innerHeight - 320), item, image });
                     }}
                   >
                     <img src={image.url} alt="历史生成结果" draggable="false" />
@@ -2952,9 +2980,10 @@ export default function ComfyLocalWorkbench({ mode = "workbench", active = true 
         </div>
       )}
       {imageMenu && <div className="image-context-menu" style={{ left: imageMenu.x, top: imageMenu.y }} onClick={(event) => event.stopPropagation()}>
-        <button onClick={() => contextCopy()}><Copy />复制图片</button>
-        <button onClick={() => contextOpenFolder()}><FolderOpen />打开所在文件夹</button>
-        <button className="danger" onClick={contextDelete}><Trash />{galleryMode === "trash" ? "永久删除" : "删除"}</button>
+        <button type="button" onClick={() => contextCopy()}><Copy />复制图片</button>
+        <button type="button" onClick={() => contextOpenFolder()}><FolderOpen />打开所在文件夹</button>
+        {galleryMode !== "trash" && <button type="button" onClick={() => contextTransfer()}><TrayArrowUp />转到文件中转站</button>}
+        <button type="button" className="danger" onClick={contextDelete}><Trash />{galleryMode === "trash" ? "永久删除" : "删除"}</button>
         {galleryMode === "trash" && <button onClick={() => { const entry = contextEntry(); if (!entry) return; setImageMenu(null); restoreEntries([entry]).then(() => { advanceDetailAfterAction(entry.item, entry.image); setNotice("图片已恢复"); }).catch((e) => setError(`恢复失败：${e.message}`)); }}><ArrowClockwise />恢复</button>}
         {galleryMode !== "trash" && imageMenu.item.source !== "asset" && <button onClick={contextMigrate}><FolderOpen />加入待处理</button>}
         {galleryMode !== "trash" && imageMenu.item.source !== "asset" && <button onClick={() => { const entry = contextEntry(); if (!entry) return; const fromViewer = imageMenu.viewer; setImageMenu(null); migratePaths([entry.image.path], fromViewer ? entry : null, "ACTIVE"); }}><FolderOpen />转成资产</button>}
@@ -3053,7 +3082,7 @@ export default function ComfyLocalWorkbench({ mode = "workbench", active = true 
             <div className="history-lightbox" onContextMenu={(event) => {
               event.preventDefault();
               const image = detail.images[detail.index];
-              setImageMenu({ x: Math.min(event.clientX, window.innerWidth - 190), y: Math.min(event.clientY, window.innerHeight - 205), item: image.task, image, viewer: true });
+              setImageMenu({ x: Math.min(event.clientX, window.innerWidth - 190), y: Math.min(event.clientY, window.innerHeight - 320), item: image.task, image, viewer: true });
             }}>
               <TransformWrapper
                 ref={viewerTransform}

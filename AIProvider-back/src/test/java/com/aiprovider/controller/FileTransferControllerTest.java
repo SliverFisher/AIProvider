@@ -1,0 +1,58 @@
+package com.aiprovider.controller;
+
+import com.aiprovider.model.vo.FileTransferDownload;
+import com.aiprovider.model.vo.FileTransferFileVO;
+import com.aiprovider.service.FileTransferService;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.springframework.core.io.ByteArrayResource;
+import org.springframework.mock.web.MockMultipartFile;
+import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+
+import java.time.Instant;
+import java.util.Collections;
+
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+class FileTransferControllerTest {
+    private MockMvc mvc;
+    private FileTransferService service;
+
+    @BeforeEach void setUp() {
+        service = mock(FileTransferService.class);
+        mvc = MockMvcBuilders.standaloneSetup(new FileTransferController(service))
+            .setControllerAdvice(new ApiExceptionHandler()).build();
+    }
+
+    @Test void exposesUploadListDownloadAndDeleteContract() throws Exception {
+        FileTransferFileVO file = new FileTransferFileVO("device-file.txt", 6, Instant.parse("2026-07-19T01:02:03Z"));
+        when(service.upload(any())).thenReturn(file);
+        when(service.list()).thenReturn(Collections.singletonList(file));
+        when(service.download("device-file.txt")).thenReturn(new FileTransferDownload(
+            "device-file.txt", 6, new ByteArrayResource("second".getBytes("UTF-8"))));
+
+        mvc.perform(multipart("/api/file-transfer/upload")
+                .file(new MockMultipartFile("file", "device-file.txt", "text/plain", "second".getBytes("UTF-8"))))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.data.fileName").value("device-file.txt"));
+        mvc.perform(get("/api/file-transfer/files"))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.data[0].fileSize").value(6));
+        mvc.perform(get("/api/file-transfer/download/{fileName}", "device-file.txt"))
+            .andExpect(status().isOk()).andExpect(header().string("Content-Length", "6"))
+            .andExpect(header().string("Content-Disposition", org.hamcrest.Matchers.startsWith("attachment;")))
+            .andExpect(content().bytes("second".getBytes("UTF-8")));
+        mvc.perform(delete("/api/file-transfer/{fileName}", "device-file.txt"))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.data.deleted").value("device-file.txt"));
+        verify(service).delete("device-file.txt");
+    }
+}

@@ -50,6 +50,7 @@ import {
   PaintBrush,
   Cube,
   ChatsCircle,
+  FolderSimple,
 } from "@phosphor-icons/react";
 import {
   Area,
@@ -78,6 +79,7 @@ import VideoEditor from "./VideoEditor";
 import FoundryWorkbench from "./FoundryWorkbench";
 import CryptoMarket from "./CryptoMarket";
 import RemoteCodex from "./RemoteCodex";
+import FileTransfer from "./FileTransfer";
 import { RELEASE_VERSION } from "./releaseVersion";
 import { readJsonResponse } from "./apiResponse";
 import "./App.css";
@@ -97,6 +99,7 @@ const NAV = [
   { key: "monitor", label: "监控中心", icon: Pulse, group: "operate" },
   { key: "remoteCodex", label: "远程 Codex", icon: ChatsCircle, group: "operate" },
   { key: "foundry", label: "链上工具", icon: Cube, group: "operate" },
+  { key: "fileTransfer", label: "文件中转", icon: FolderSimple, group: "operate" },
   { key: "camera", label: "手机监控", icon: VideoCamera, closed: true, hidden: true, group: "operate" },
   { key: "twitter", label: "Twitter 发布", icon: XLogo, group: "publish" },
   { key: "contentOperations", label: "内容运营", icon: Broadcast, group: "publish" },
@@ -119,6 +122,7 @@ const PAGE_DESCRIPTIONS = {
   monitor: "服务健康、资源、网络与费用",
   remoteCodex: "连接远程 Codex 并管理对话",
   foundry: "Foundry 工具与链上只读查询",
+  fileTransfer: "个人设备之间上传、下载和删除文件",
   twitter: "账号连接、内容编辑与发布任务",
   contentOperations: "采集、判断、发布与自动化运营",
   appearance: "统一管理全站主题与组件外观",
@@ -265,13 +269,13 @@ function useDashboardData() {
 }
 
 function App() {
-  const viewFromPath = () => ({ "/workshop": "workshop", "/manual-editor": "manualEditor", "/video-editor": "videoEditor", "/market": "market", "/prompts": "prompts", "/prompt-options": "promptOptions", "/maid": "maid", "/admin/monitor": "monitor", "/remote-codex": "remoteCodex", "/foundry": "foundry", "/camera": "camera", "/twitter": "twitter", "/content-operations": "contentOperations", "/appearance": "appearance", "/settings": "settings" })[window.location.pathname] || "home";
+  const viewFromPath = () => ({ "/workshop": "workshop", "/manual-editor": "manualEditor", "/video-editor": "videoEditor", "/market": "market", "/prompts": "prompts", "/prompt-options": "promptOptions", "/maid": "maid", "/admin/monitor": "monitor", "/remote-codex": "remoteCodex", "/foundry": "foundry", "/file-transfer": "fileTransfer", "/camera": "camera", "/twitter": "twitter", "/content-operations": "contentOperations", "/appearance": "appearance", "/settings": "settings" })[window.location.pathname] || "home";
   const [view, setView] = useState(viewFromPath);
   const [promptOptionCategory, setPromptOptionCategory] = useState("");
   const dashboard = useDashboardData();
   const current = NAV.find((item) => item.key === (view === "promptOptions" ? "prompts" : view));
   useEffect(() => {
-    const path = ({ workshop: "/workshop", manualEditor: "/manual-editor", videoEditor: "/video-editor", market: "/market", prompts: "/prompts", promptOptions: "/prompt-options", maid: "/maid", monitor: "/admin/monitor", remoteCodex: "/remote-codex", foundry: "/foundry", camera: "/camera", twitter: "/twitter", contentOperations: "/content-operations", appearance: "/appearance", settings: "/settings" })[view] || "/";
+    const path = ({ workshop: "/workshop", manualEditor: "/manual-editor", videoEditor: "/video-editor", market: "/market", prompts: "/prompts", promptOptions: "/prompt-options", maid: "/maid", monitor: "/admin/monitor", remoteCodex: "/remote-codex", foundry: "/foundry", fileTransfer: "/file-transfer", camera: "/camera", twitter: "/twitter", contentOperations: "/content-operations", appearance: "/appearance", settings: "/settings" })[view] || "/";
     if (window.location.pathname !== path) window.history.replaceState({}, "", path);
   }, [view]);
   useEffect(() => {
@@ -353,6 +357,7 @@ function App() {
         {view === "monitor" && <MonitorCenter />}
         {view === "remoteCodex" && <RemoteCodex />}
         {view === "foundry" && <FoundryWorkbench />}
+        {view === "fileTransfer" && <FileTransfer />}
         {view === "twitter" && <TwitterPublisher />}
         {view === "contentOperations" && <ContentOperationsCenter />}
         {view === "appearance" && <UiControl />}

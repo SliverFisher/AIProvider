@@ -87,6 +87,7 @@ describe("Comfy image generation flow", () => {
   let recentHistoryPoll;
   let bridgeRequests;
   let registeredAssetStatus;
+  let transferredFileName;
 
   beforeEach(() => {
     submitted = false;
@@ -117,6 +118,7 @@ describe("Comfy image generation flow", () => {
     recentHistoryPoll = 0;
     bridgeRequests = [];
     registeredAssetStatus = null;
+    transferredFileName = null;
     vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} });
     vi.stubGlobal("confirm", vi.fn(() => true));
     vi.stubGlobal("ClipboardItem", class { constructor(items) { this.items = items; } });
@@ -148,6 +150,10 @@ describe("Comfy image generation flow", () => {
         if (promptId === PROMPT_ID) return json({ success: true, state: submitted ? "SUCCEEDED" : "QUEUED", tracked: true });
         if (promptId === "external-prompt") return json({ success: true, state: externalGalleryReady ? "COMPLETED" : "RUNNING", tracked: true });
         return json({ success: true, state: "UNKNOWN", tracked: false });
+      }
+      if (url.endsWith("/api/file-transfer/upload") && options.method === "POST") {
+        transferredFileName = options.body.get("file").name;
+        return json({ code: 200, data: { fileName: transferredFileName } });
       }
       if (url.includes("/api/tasks/") && url.endsWith("/cancel") && options.method === "POST") {
         cancelledTask = decodeURIComponent(url.split("/api/tasks/")[1].replace("/cancel", ""));
@@ -670,6 +676,16 @@ describe("Comfy image generation flow", () => {
 
     fireEvent.keyDown(window, { key: "Delete" });
     await waitFor(() => expect(deletedPaths).toEqual(["aimaid/done.png"]));
+  });
+
+  it("transfers an image to the server folder from its right-click menu", async () => {
+    render(<ComfyLocalWorkbench />);
+    fireEvent.click(await screen.findByRole("button", { name: "我的资产" }));
+    const image = await screen.findByAltText("历史生成结果");
+    fireEvent.contextMenu(image.closest("button"));
+    fireEvent.click(screen.getByRole("button", { name: "转到文件中转站" }));
+    await waitFor(() => expect(transferredFileName).toBe("saved.png"));
+    expect(screen.getByText("已转到文件中转站：saved.png")).toBeTruthy();
   });
 
   it("asks Bridge to cancel every active generation from one native button", async () => {

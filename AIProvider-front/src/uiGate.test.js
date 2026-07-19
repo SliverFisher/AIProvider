@@ -26,13 +26,28 @@ describe("UI release gate", () => {
   it("keeps every primary workspace on semantic theme tokens", () => {
     const theme = read("SemanticTheme.css");
     const tokens = read("uiTheme.js");
-    ["video-editor-shell", "foundry-workbench", "system-settings-shell", "twitter-publisher", "content-operations-center", "prompt-scheme-list", "maid-panel", "universe-toolbar"].forEach((root) => {
+    ["video-editor-shell", "foundry-workbench", "system-settings-shell", "file-transfer-page", "twitter-publisher", "content-operations-center", "prompt-scheme-list", "maid-panel", "universe-toolbar"].forEach((root) => {
       expect(theme, `${root} 未接入全局语义主题`).toContain(root);
     });
     const copy = read("UiControl.jsx");
     ["视频编辑", "我的女仆", "链上工具", "Twitter", "系统设置"].forEach((label) => expect(copy).toContain(label));
     expect(tokens).toContain('"--text-muted-readable"');
     expect(tokens).toContain('"--border-interactive"');
+  });
+
+  it("keeps file transfer reachable, semantic, and horizontally contained", () => {
+    const app = read("App.jsx");
+    const page = read("FileTransfer.jsx");
+    const css = read("FileTransfer.css");
+    expect(app).toContain('{ key: "fileTransfer"');
+    expect(app).toContain('fileTransfer: "/file-transfer"');
+    expect(app).toContain("<FileTransfer />");
+    expect(page).toContain('type="file"');
+    expect(page).toContain('<progress max="100"');
+    expect(page).not.toMatch(/<div[^>]+onClick=/);
+    expect(css).toContain("var(--bg-surface)");
+    expect(css).toMatch(/\.file-transfer-page\{[^}]*min-width:0[^}]*overflow:hidden/);
+    expect(css).toMatch(/\.file-transfer-table-wrap\{[^}]*overflow:auto/);
   });
 
   it("keeps mobile navigation reachable and touch-safe", () => {
