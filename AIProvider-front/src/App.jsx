@@ -93,23 +93,23 @@ import "./DesktopShell.css";
 
 const API = "/api";
 const NAV = [
-  { key: "favorites", label: "我的最爱", icon: Star, group: "create" },
-  { key: "workshop", label: "图像工坊", icon: ImageSquare, group: "create" },
-  { key: "prompts", label: "Prompt 管理", icon: SlidersHorizontal, group: "create" },
-  { key: "manualEditor", label: "图片编辑", icon: PaintBrush, group: "create" },
-  { key: "videoEditor", label: "视频编辑", icon: FilmSlate, group: "create" },
-  { key: "maid", label: "我的女仆", icon: Heart, group: "create" },
-  { key: "market", label: "市场行情", icon: ChartLineUp, group: "operate" },
-  { key: "monitor", label: "监控中心", icon: Pulse, group: "operate" },
-  { key: "remoteCodex", label: "远程 Codex", icon: ChatsCircle, group: "operate" },
-  { key: "foundry", label: "链上工具", icon: Cube, group: "operate" },
-  { key: "fileTransfer", label: "文件中转", icon: FolderSimple, group: "operate" },
+  { key: "favorites", label: "我的最爱", icon: Star, group: "create", color: "#ff8fbe" },
+  { key: "workshop", label: "图像工坊", icon: ImageSquare, group: "create", color: "#c69cff" },
+  { key: "prompts", label: "Prompt 管理", icon: SlidersHorizontal, group: "create", color: "#f0a860" },
+  { key: "manualEditor", label: "图片编辑", icon: PaintBrush, group: "create", color: "#6fe2df" },
+  { key: "videoEditor", label: "视频编辑", icon: FilmSlate, group: "create", color: "#82b7ff" },
+  { key: "maid", label: "我的女仆", icon: Heart, group: "create", color: "#ff718f" },
+  { key: "market", label: "市场行情", icon: ChartLineUp, group: "operate", color: "#72ddb1" },
+  { key: "monitor", label: "监控中心", icon: Pulse, group: "operate", color: "#ff6b6b" },
+  { key: "remoteCodex", label: "远程 Codex", icon: ChatsCircle, group: "operate", color: "#a78bfa" },
+  { key: "foundry", label: "链上工具", icon: Cube, group: "operate", color: "#f59e0b" },
+  { key: "fileTransfer", label: "文件中转", icon: FolderSimple, group: "operate", color: "#60a5fa" },
   { key: "camera", label: "手机监控", icon: VideoCamera, closed: true, hidden: true, group: "operate" },
-  { key: "twitter", label: "Twitter 发布", icon: XLogo, group: "publish" },
-  { key: "contentOperations", label: "内容运营", icon: Broadcast, group: "publish" },
-  { key: "accounts", label: "账号中心", icon: IdentificationCard, group: "system" },
-  { key: "appearance", label: "UI 控制", icon: Palette, group: "system" },
-  { key: "settings", label: "系统设置", icon: GearSix, group: "system" },
+  { key: "twitter", label: "Twitter 发布", icon: XLogo, group: "publish", color: "#38bdf8" },
+  { key: "contentOperations", label: "内容运营", icon: Broadcast, group: "publish", color: "#fb923c" },
+  { key: "accounts", label: "账号中心", icon: IdentificationCard, group: "system", color: "#34d399" },
+  { key: "appearance", label: "UI 控制", icon: Palette, group: "system", color: "#e879f9" },
+  { key: "settings", label: "系统设置", icon: GearSix, group: "system", color: "#94a3b8" },
 ];
 const NAV_GROUPS = [
   { key: "create", label: "创作" },
@@ -406,8 +406,9 @@ function NavButton({ item, active, onClick, mobile = false }) {
       onClick={item.closed ? undefined : onClick}
       title={item.closed ? `${item.label} · 暂未开放` : item.label}
       aria-current={active ? "page" : undefined}
+      style={item.color ? { "--nav-accent": item.color } : undefined}
     >
-      <Icon size={22} weight={active ? "duotone" : "regular"} />
+      <Icon size={22} weight={active ? "duotone" : "regular"} color={item.color} />
       <span>{item.label}</span>
       {item.closed && <i className="nav-closed-dot">休</i>}
     </button>

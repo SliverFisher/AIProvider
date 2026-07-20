@@ -117,7 +117,7 @@
 .rail-expanded .nav-button:hover:not(:disabled) {
   border-color: var(--border-subtle) !important;
   background: var(--bg-card) !important;
-  color: var(--text-primary) !important;
+  color: var(--nav-accent, var(--text-primary)) !important;
 }
 
 .rail-expanded .nav-button.active {
