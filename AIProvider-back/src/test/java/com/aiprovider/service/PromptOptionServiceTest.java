@@ -2,6 +2,7 @@ package com.aiprovider.service;
 
 import com.aiprovider.mapper.PromptCatalogMapper;
 import com.aiprovider.model.dto.PromptOptionDTO;
+import com.aiprovider.model.vo.PromptOptionVO;
 import com.aiprovider.repository.PromptCatalogRepository;
 import org.junit.jupiter.api.Test;
 import java.util.*;
@@ -12,11 +13,13 @@ class PromptOptionServiceTest {
     @Test void listsCreatesUpdatesAndDeletesValidatedOptions() {
         PromptCatalogRepository repository = mock(PromptCatalogRepository.class); PromptOptionService service = new PromptOptionService(repository);
         Map<String,Object> row = new HashMap<>(); row.put("id","black_stockings"); row.put("category","Clothing"); row.put("name","黑丝袜"); row.put("prompt","black stockings"); row.put("type","positive"); row.put("reverseId",null); row.put("sortOrder",1); row.put("enabled",1); row.put("allowMultiple",true);
-        when(repository.findOptionPage(null, null, null, 100, 0)).thenReturn(Collections.singletonList(row));
-        when(repository.countOptions(null, null, null)).thenReturn(1L);
-        assertThat(service.page(null, null, "all", 1, 100).getItems()).singleElement().satisfies(item -> { assertThat(item.getName()).isEqualTo("黑丝袜"); assertThat(item.isEnabled()).isTrue(); });
+        when(repository.findOptionPage(null, null, null, null, 100, 0)).thenReturn(Collections.singletonList(row));
+        when(repository.countOptions(null, null, null, null)).thenReturn(1L);
+        assertThat(service.page(null, null, "all", null, 1, 100).getItems()).singleElement().satisfies(item -> { assertThat(item.getName()).isEqualTo("黑丝袜"); assertThat(item.isEnabled()).isTrue(); });
         when(repository.findOptionsByIds(Collections.singletonList("black_stockings"))).thenReturn(Collections.singletonList(row));
         assertThat(service.resolve(Arrays.asList("black_stockings", "black_stockings"))).singleElement().satisfies(item -> assertThat(item.getId()).isEqualTo("black_stockings"));
+        when(repository.findEnabledOptionsByTerms(Arrays.asList("black stockings", "standing"), "positive")).thenReturn(Collections.singletonList(row));
+        assertThat(service.analyze("black stockings, standing", "")).singleElement().satisfies(item -> assertThat(item.getId()).isEqualTo("black_stockings"));
         when(repository.findGeneralNegativePrompt()).thenReturn(" low quality ");
         assertThat(service.config()).containsEntry("generalNegativePrompt", "low quality");
         PromptOptionDTO dto = valid(); service.create(dto); verify(repository).insertOption(any(PromptCatalogMapper.OptionRecord.class));
@@ -26,12 +29,21 @@ class PromptOptionServiceTest {
 
     @Test void pagesAndFiltersOptionsOnTheServer() {
         PromptCatalogRepository repository = mock(PromptCatalogRepository.class); PromptOptionService service = new PromptOptionService(repository);
-        when(repository.findOptionPage("丝袜", "Clothing", true, 50, 50)).thenReturn(Collections.emptyList());
-        when(repository.countOptions("丝袜", "Clothing", true)).thenReturn(123L);
-        assertThat(service.page(" 丝袜 ", "Clothing", "enabled", 2, 50).getPages()).isEqualTo(3);
-        verify(repository).findOptionPage("丝袜", "Clothing", true, 50, 50);
-        assertThatThrownBy(() -> service.page(null, null, "all", 1, 101)).hasMessageContaining("pageSize");
-        assertThatThrownBy(() -> service.page(null, null, "unknown", 1, 20)).hasMessageContaining("status");
+        when(repository.findOptionPage("丝袜", "Clothing", true, "positive", 50, 50)).thenReturn(Collections.emptyList());
+        when(repository.countOptions("丝袜", "Clothing", true, "positive")).thenReturn(123L);
+        assertThat(service.page(" 丝袜 ", "Clothing", "enabled", "positive", 2, 50).getPages()).isEqualTo(3);
+        verify(repository).findOptionPage("丝袜", "Clothing", true, "positive", 50, 50);
+        assertThatThrownBy(() -> service.page(null, null, "all", null, 1, 101)).hasMessageContaining("pageSize");
+        assertThatThrownBy(() -> service.page(null, null, "unknown", null, 1, 20)).hasMessageContaining("status");
+    }
+
+    @Test void analyzesOnlySubmittedPromptTermsWithoutLoadingTheCatalog() {
+        PromptCatalogRepository repository = mock(PromptCatalogRepository.class); PromptOptionService service = new PromptOptionService(repository);
+        Map<String,Object> row = new HashMap<>(); row.put("id","standing"); row.put("category","Pose"); row.put("name","站立"); row.put("prompt","standing"); row.put("type","positive"); row.put("sortOrder",1); row.put("enabled",1); row.put("allowMultiple",false);
+        when(repository.findEnabledOptionsByTerms(Arrays.asList("standing", "very tall woman"), "positive")).thenReturn(Collections.singletonList(row));
+        assertThat(service.analyze("standing, very tall woman", "")).extracting(PromptOptionVO::getId).containsExactly("standing");
+        verify(repository, never()).findEnabledOptions();
+        verify(repository).findEnabledOptionsByTerms(Arrays.asList("standing", "very tall woman"), "positive");
     }
 
     @Test void rejectsDuplicatesInvalidDataReferencedAndMissingOptions() {

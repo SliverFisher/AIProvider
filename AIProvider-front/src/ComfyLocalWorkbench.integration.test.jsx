@@ -151,6 +151,9 @@ describe("Comfy image generation flow", () => {
       if (url.endsWith("/api/local-workflows/settings")) return json({ directory: "F:\\ComfyUI\\user\\default\\workflows", exists: true });
       if (url.endsWith("/api/local-workflows")) return json({ directory: "F:\\ComfyUI\\user\\default\\workflows", workflows: [workflow, workflow2, cutoutWorkflow, interactiveWorkflow], rejected: [] });
       if (url.endsWith("/api/lora-models")) return json({ models: [] });
+      if (url === "/api/prompt-options/config") return json({ code: 200, data: { generalNegativePrompt: "" } });
+      if (url === "/api/prompt-options/analyze") return json({ code: 200, data: [] });
+      if (url.startsWith("/api/prompt-options?")) return json({ code: 200, data: { items: [], total: 0, pages: 0, page: 1, pageSize: 100 } });
       if (url.includes("/api/comfy-presets")) return json({ code: 200, data: [{ id: 2, name: "扶她0", isDefault: presetIsDefault, selectedOptions: { characterCount: [], characterTypes: [], relationships: [], actions: [], clothing: [], expression: [], pose: [], cameraAngle: [], shotType: [], scene: [], composition: [], quality: [] }, positiveExtra: "", negativeExtra: "", positivePrompt: presetPositivePrompt, negativePrompt: "preset negative", remark: "" }] });
       if (url.startsWith("/api/assets?")) {
         assetRequests += 1;
@@ -326,12 +329,17 @@ describe("Comfy image generation flow", () => {
 
   afterEach(() => { cleanup(); vi.unstubAllGlobals(); localStorage.clear(); });
 
+  it("parses only the current Prompt on the backend without downloading the full catalog", async () => {
+    render(<ComfyLocalWorkbench />);
+    await waitFor(() => expect(fetch.mock.calls.some(([url]) => String(url) === "/api/prompt-options/analyze")).toBe(true));
+    expect(fetch.mock.calls.some(([url]) => String(url) === "/api/prompt-catalog")).toBe(false);
+  });
+
   it("offers the registered app launch action without an alert when the local bridge is missing", async () => {
     const availableFetch = fetch.getMockImplementation();
     fetch.mockImplementation((input, options) => {
       const url = String(input);
       if (url.startsWith("http://127.0.0.1:32145")) return Promise.reject(new TypeError("Failed to fetch"));
-      if (url === "/api/prompt-catalog") return Promise.resolve(json({ code: 200, data: { options: [], negativeOptions: [], generalNegativePrompt: "" } }));
       return availableFetch(input, options);
     });
     render(<ComfyLocalWorkbench />);

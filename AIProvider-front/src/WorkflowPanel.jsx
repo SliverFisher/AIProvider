@@ -34,6 +34,8 @@ const SIZE_OPTIONS = [
   ["1080x1920", "竖屏 · 1K（1080 × 1920）"], ["2160x3840", "竖屏 · 2K（2160 × 3840）"], ["4320x7680", "竖屏 · 4K（4320 × 7680）"],
 ];
 
+const promptTermKey = (value) => String(value || "").trim().replace(/\s+/g, " ").toLocaleLowerCase("en-US");
+
 function displayLabel(fieldKey, fieldSpec) {
   return LABELS[fieldKey] || fieldSpec?.label || fieldKey;
 }
@@ -176,7 +178,7 @@ function WorkflowField({ fieldKey, fieldSpec, value, referenceFile, onReference,
   return <label>{label}<input aria-label={label} value={value ?? ""} onChange={(event) => onChange(fieldKey, event.target.value)} /></label>;
 }
 
-export default function WorkflowPanel({ workflows, loading, workflow, fieldKeys, fieldSpecs, values, onWorkflowChange, onFieldChange, referenceFiles, onReference, onReferenceDrop, loraModels, loraModelsLoading, mainModels, mainModelsLoading, promptOptions = [], onPromptOptionsReload, presets, presetQuery, onPresetChange, presetSaveName, onPresetSaveNameChange, onSavePreset, onReloadPreset, onEditPreset, presetSaving, presetReloading, onLuckyGenerate, luckyLoading, onBatchGenerate, onGenerate, disabled }) {
+export default function WorkflowPanel({ workflows, loading, workflow, fieldKeys, fieldSpecs, values, onWorkflowChange, onFieldChange, referenceFiles, onReference, onReferenceDrop, loraModels, loraModelsLoading, mainModels, mainModelsLoading, promptOptions = [], onPromptOptionsReload, onPromptOptionsQuery, presets, presetQuery, onPresetChange, presetSaveName, onPresetSaveNameChange, onSavePreset, onReloadPreset, onEditPreset, presetSaving, presetReloading, onLuckyGenerate, luckyLoading, onBatchGenerate, onGenerate, disabled }) {
   const [promptEditing, setPromptEditing] = useState({ positivePrompt: false, negativePrompt: false });
   const [promptTermQuery, setPromptTermQuery] = useState("");
   const [negativeTermQuery, setNegativeTermQuery] = useState("");
@@ -196,6 +198,28 @@ export default function WorkflowPanel({ workflows, loading, workflow, fieldKeys,
   const [saveDialogOpen, setSaveDialogOpen] = useState(false);
   const [batchDialog, setBatchDialog] = useState({ open: false, category: "", selectedIds: [] });
   const promptTranslationService = useMemo(() => getPromptTranslationService(promptOptions), [promptOptions]);
+  const promptTermIndexes = useMemo(() => {
+    const positive = new Map();
+    const negative = new Map();
+    const add = (target, source, option) => String(source || "").split(",").forEach((term) => {
+      const key = promptTermKey(term);
+      if (key && !target.has(key)) target.set(key, option);
+    });
+    promptOptions.forEach((option) => {
+      if (option.type !== "negative") add(positive, option.prompt || option.positivePrompt, option);
+      if (option.type === "negative") add(negative, option.prompt || option.negativePrompt, option);
+      else add(negative, option.negativePrompt, option);
+    });
+    return { positivePrompt: positive, negativePrompt: negative };
+  }, [promptOptions]);
+  const indexedPromptTerms = useMemo(() => Object.fromEntries(["positivePrompt", "negativePrompt"].map((fieldKey) => {
+    const index = promptTermIndexes[fieldKey];
+    const items = String(values[fieldKey] || "").split(",")
+      .map((token, position) => ({ token: token.trim().replace(/\s+/g, " "), position }))
+      .filter((item) => item.token)
+      .map((item) => ({ ...item, option: index.get(promptTermKey(item.token)) }));
+    return [fieldKey, items];
+  })), [promptTermIndexes, values.negativePrompt, values.positivePrompt]);
   const promptTermResults = useMemo(() => {
     const keyword = promptTermQuery.trim().toLocaleLowerCase("zh-CN");
     if (!keyword && !promptTermCategory) return [];
@@ -206,18 +230,27 @@ export default function WorkflowPanel({ workflows, loading, workflow, fieldKeys,
     if (!keyword && !negativeTermCategory) return [];
     return promptOptions.filter((option) => option.type === "negative" && (!negativeTermCategory || option.category === negativeTermCategory) && (!keyword || [option.name, option.prompt, option.negativePrompt, option.id].filter(Boolean).join(" ").toLocaleLowerCase("zh-CN").includes(keyword))).slice(0, 50);
   }, [promptOptions, negativeTermCategory, negativeTermQuery]);
-  const batchCategories = useMemo(() => {
-    const available = new Set(promptOptions.filter((option) => option?.category && (option.prompt || option.positivePrompt || option.negativePrompt)).map((option) => option.category));
-    const ordered = PROMPT_CATEGORIES.filter((item) => available.has(item.category));
-    const known = new Set(ordered.map((item) => item.category));
-    return [...ordered, ...[...available].filter((category) => !known.has(category)).sort().map((category) => ({ category, label: category }))];
-  }, [promptOptions]);
+  const batchCategories = PROMPT_CATEGORIES;
   const batchCategoryOptions = useMemo(() => promptOptions
     .filter((option) => option.category === batchDialog.category && (option.prompt || option.positivePrompt || option.negativePrompt))
     .sort((left, right) => Number(left.sortOrder ?? 0) - Number(right.sortOrder ?? 0) || String(left.name || left.id).localeCompare(String(right.name || right.id), "zh-CN")), [batchDialog.category, promptOptions]);
   const supportsPrompt = fieldKeys.includes("positivePrompt") || fieldKeys.includes("negativePrompt");
   useEffect(() => { setPromptEditing({ positivePrompt: false, negativePrompt: false }); }, [presetQuery, workflow?.id]);
   useEffect(() => { setDisabledPromptTerms({ positivePrompt: [], negativePrompt: [] }); promptTermOrderRef.current = { positivePrompt: new Map(), negativePrompt: new Map() }; }, [presetQuery, workflow?.id, presetReloading]);
+  useEffect(() => {
+    if (!onPromptOptionsQuery || (!promptTermQuery.trim() && !promptTermCategory)) return undefined;
+    const timer = window.setTimeout(() => onPromptOptionsQuery({ query: promptTermQuery, category: promptTermCategory, type: "positive" }).catch((exception) => setQuickError(exception.message)), 250);
+    return () => window.clearTimeout(timer);
+  }, [onPromptOptionsQuery, promptTermCategory, promptTermQuery]);
+  useEffect(() => {
+    if (!onPromptOptionsQuery || (!negativeTermQuery.trim() && !negativeTermCategory)) return undefined;
+    const timer = window.setTimeout(() => onPromptOptionsQuery({ query: negativeTermQuery, category: negativeTermCategory, type: "negative" }).catch((exception) => setQuickError(exception.message)), 250);
+    return () => window.clearTimeout(timer);
+  }, [negativeTermCategory, negativeTermQuery, onPromptOptionsQuery]);
+  useEffect(() => {
+    if (!batchDialog.open || !batchDialog.category || !onPromptOptionsQuery) return;
+    onPromptOptionsQuery({ category: batchDialog.category }).catch((exception) => setQuickError(exception.message));
+  }, [batchDialog.category, batchDialog.open, onPromptOptionsQuery]);
   const editorKey = fieldKeys.find((fieldKey) => fieldSpecs[fieldKey]?.nodeType === "MaskEditMEC" && fieldSpecs[fieldKey]?.input === "editor_data");
   const editorNodeId = editorKey ? fieldSpecs[editorKey]?.nodeId : null;
   const radiusKey = editorNodeId ? fieldKeys.find((fieldKey) => fieldSpecs[fieldKey]?.nodeId === editorNodeId && fieldSpecs[fieldKey]?.input === "default_radius") : null;
@@ -235,19 +268,9 @@ export default function WorkflowPanel({ workflows, loading, workflow, fieldKeys,
   };
   const renderPromptField = (fieldKey) => {
     const source = String(values[fieldKey] || "");
-    const tokens = source.split(",").map((token, index) => ({ token: token.trim().replace(/\s+/g, " "), index })).filter((item) => item.token);
+    const mapped = indexedPromptTerms[fieldKey] || [];
     const orderMap = promptTermOrderRef.current[fieldKey];
-    tokens.forEach((item) => { const key = item.token.toLocaleLowerCase("en-US"); if (!orderMap.has(key)) orderMap.set(key, orderMap.size); });
-    const targetType = fieldKey === "positivePrompt" ? "positive" : "negative";
-    const mapped = tokens.map((item) => {
-      const option = promptOptions.find((candidate) => {
-        if (targetType === "positive" && candidate.type === "negative") return false;
-        if (targetType === "negative" && candidate.type === "positive" && !candidate.negativePrompt) return false;
-        const prompt = candidate.prompt || (targetType === "positive" ? candidate.positivePrompt : candidate.negativePrompt);
-        return String(prompt || "").split(",").some((term) => term.trim().replace(/\s+/g, " ").toLocaleLowerCase("en-US") === item.token.toLocaleLowerCase("en-US"));
-      });
-      return { ...item, option };
-    });
+    mapped.forEach((item) => { const key = promptTermKey(item.token); if (!orderMap.has(key)) orderMap.set(key, orderMap.size); });
     const disabled = disabledPromptTerms[fieldKey] || [];
     const isDisabled = (token) => disabled.some((item) => item.token.toLocaleLowerCase("en-US") === token.toLocaleLowerCase("en-US"));
     const structured = mapped.filter((item) => item.option && !isDisabled(item.token));

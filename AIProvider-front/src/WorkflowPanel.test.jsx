@@ -167,6 +167,28 @@ describe("WorkflowPanel generation action", () => {
     expect(screen.getByText("black stockings", { exact: true })).toBeTruthy();
   });
 
+  it("does not rescan the Prompt catalog when an unrelated task update rerenders the parent", () => {
+    let promptReads = 0;
+    const options = Array.from({ length: 4032 }, (_, index) => ({
+      id: `term_${index}`, name: `词条 ${index}`, type: "positive", category: "Character",
+      get prompt() { promptReads += 1; return `catalog term ${index}`; },
+    }));
+    const values = { positivePrompt: Array.from({ length: 120 }, (_, index) => `manual sentence ${index}`).join(", ") };
+    function Harness() {
+      const [, setTaskUpdates] = React.useState(0);
+      return <><button type="button" onClick={() => setTaskUpdates((current) => current + 1)}>模拟任务更新</button><WorkflowPanel
+        workflows={[{ id: "wf", name: "测试工作流" }]} workflow={{ id: "wf", name: "测试工作流", capabilities: {} }}
+        fieldKeys={["positivePrompt"]} fieldSpecs={{ positivePrompt: {} }} values={values} referenceFiles={{}} promptOptions={options}
+        presets={[]} presetQuery="" disabled={{ blocked: false, busy: false }} loading={false}
+        onWorkflowChange={vi.fn()} onFieldChange={vi.fn()} onReference={vi.fn()} onPresetChange={vi.fn()} onGenerate={vi.fn()} /></>;
+    }
+    render(<Harness />);
+    fireEvent.click(screen.getByRole("button", { name: "手动编辑" }));
+    const readsAfterOpening = promptReads;
+    fireEvent.click(screen.getByRole("button", { name: "模拟任务更新" }));
+    expect(promptReads).toBe(readsAfterOpening);
+  });
+
   it("quickly creates and appends positive and negative catalog terms in their own sections", async () => {
     const change = vi.fn();
     const writes = [];

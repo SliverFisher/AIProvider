@@ -19,11 +19,15 @@ public class PromptOptionController {
                                            @RequestParam(defaultValue = "100") int pageSize,
                                            @RequestParam(required = false) String query,
                                            @RequestParam(required = false) String category,
+                                           @RequestParam(required = false) String type,
                                            @RequestParam(defaultValue = "all") String status) {
-        return Result.success(service.page(query, category, status, page, pageSize));
+        return Result.success(service.page(query, category, status, type, page, pageSize));
     }
     @GetMapping("/config") public Result<Map<String, String>> config() { return Result.success(service.config()); }
     @PostMapping("/resolve") public Result<List<PromptOptionVO>> resolve(@RequestBody List<String> ids) { return Result.success(service.resolve(ids)); }
+    @PostMapping("/analyze") public Result<List<PromptOptionVO>> analyze(@RequestBody Map<String, String> prompts) {
+        return Result.success(service.analyze(prompts == null ? null : prompts.get("positivePrompt"), prompts == null ? null : prompts.get("negativePrompt")));
+    }
     @PostMapping public Result<Void> create(@RequestBody PromptOptionDTO dto) { service.create(dto); return Result.success(); }
     @PutMapping("/{id}") public Result<Void> update(@PathVariable String id, @RequestBody PromptOptionDTO dto) { service.update(id, dto); return Result.success(); }
     @DeleteMapping("/{id}") public Result<Void> delete(@PathVariable String id) { service.delete(id); return Result.success(); }

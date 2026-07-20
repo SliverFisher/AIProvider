@@ -8,11 +8,14 @@ import com.aiprovider.repository.PromptCatalogRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import java.util.*;
 import java.util.regex.Pattern;
 
 @Service
 public class PromptOptionService {
+    private static final Logger log = LoggerFactory.getLogger(PromptOptionService.class);
     private static final Pattern ID_PATTERN = Pattern.compile("[a-z0-9][a-z0-9_]{0,63}");
     private static final Set<String> MULTIPLE_CATEGORIES = Set.of("Character", "Appearance", "Special", "Clothing", "Artist", "Relationship", "Action", "Composition", "Eyes", "Hair", "Background", "Lighting", "Style", "Quality");
     private static final Set<String> CATEGORIES = Set.of("Action", "Appearance", "Artist", "Background", "Camera", "Character", "Clothing", "Composition", "Expression", "Eyes", "Hair", "Lighting", "Pose", "Quality", "Relationship", "Special", "Style");
@@ -28,7 +31,7 @@ public class PromptOptionService {
         this(repository, new PromptTranslationService(repository));
     }
 
-    public PromptOptionPageVO page(String query, String category, String status, int page, int pageSize) {
+    public PromptOptionPageVO page(String query, String category, String status, String type, int page, int pageSize) {
         if (page < 1) throw new IllegalArgumentException("page 必须大于等于 1");
         if (pageSize < 1 || pageSize > 100) throw new IllegalArgumentException("pageSize 必须在 1 到 100 之间");
         String normalizedQuery = optional(query, "搜索词", 100);
@@ -40,10 +43,14 @@ public class PromptOptionService {
         else if ("enabled".equals(normalizedStatus)) enabled = true;
         else if ("disabled".equals(normalizedStatus)) enabled = false;
         else throw new IllegalArgumentException("status 只能是 all、enabled 或 disabled");
+        String normalizedType = optional(type, "词条类型", 16);
+        if (normalizedType != null) normalizedType = normalizedType.toLowerCase(Locale.ROOT);
+        if (normalizedType != null && !normalizedType.equals("positive") && !normalizedType.equals("negative"))
+            throw new IllegalArgumentException("type 只能是 positive 或 negative");
         List<PromptOptionVO> result = new ArrayList<>();
         long offset = (long) (page - 1) * pageSize;
-        for (Map<String, Object> row : repository.findOptionPage(normalizedQuery, normalizedCategory, enabled, pageSize, offset)) result.add(toVO(row));
-        return new PromptOptionPageVO(result, repository.countOptions(normalizedQuery, normalizedCategory, enabled), page, pageSize);
+        for (Map<String, Object> row : repository.findOptionPage(normalizedQuery, normalizedCategory, enabled, normalizedType, pageSize, offset)) result.add(toVO(row));
+        return new PromptOptionPageVO(result, repository.countOptions(normalizedQuery, normalizedCategory, enabled, normalizedType), page, pageSize);
     }
 
     public List<PromptOptionVO> resolve(List<String> ids) {
@@ -58,6 +65,26 @@ public class PromptOptionService {
         List<PromptOptionVO> result = new ArrayList<>();
         for (String id : normalized) if (byId.containsKey(id)) result.add(byId.get(id));
         return result;
+    }
+
+    public List<PromptOptionVO> analyze(String positivePrompt, String negativePrompt) {
+        long started = System.nanoTime();
+        List<String> positiveTerms = promptTerms(positivePrompt, "正向 Prompt");
+        List<String> negativeTerms = promptTerms(negativePrompt, "反向 Prompt");
+        LinkedHashMap<String, PromptOptionVO> matches = new LinkedHashMap<>();
+        if (!positiveTerms.isEmpty()) {
+            for (Map<String, Object> row : repository.findEnabledOptionsByTerms(positiveTerms, "positive")) {
+                PromptOptionVO option = toVO(row); matches.put(option.getId(), option);
+            }
+        }
+        if (!negativeTerms.isEmpty()) {
+            for (Map<String, Object> row : repository.findEnabledOptionsByTerms(negativeTerms, "negative")) {
+                PromptOptionVO option = toVO(row); matches.put(option.getId(), option);
+            }
+        }
+        log.info("prompt_options_analyzed positiveTerms={} negativeTerms={} matches={} elapsedMs={}",
+                positiveTerms.size(), negativeTerms.size(), matches.size(), (System.nanoTime() - started) / 1_000_000L);
+        return new ArrayList<>(matches.values());
     }
 
     public Map<String, String> config() {
@@ -109,6 +136,18 @@ public class PromptOptionService {
         record.setId(dto.getId()); record.setCategory(dto.getCategory()); record.setName(name);
         record.setPrompt(prompt); record.setType(type); record.setReverseId(reverseId); record.setSortOrder(dto.getSortOrder());
         record.setEnabled(dto.getEnabled()); record.setAllowMultiple(expectedMultiple); return record;
+    }
+
+    private List<String> promptTerms(String value, String label) {
+        if (value == null || value.trim().isEmpty()) return Collections.emptyList();
+        if (value.length() > 16000) throw new IllegalArgumentException(label + "不能超过 16000 字符");
+        LinkedHashSet<String> terms = new LinkedHashSet<>();
+        for (String part : value.split(",")) {
+            String term = part.trim().replaceAll("\\s+", " ").toLowerCase(Locale.ROOT);
+            if (!term.isEmpty()) terms.add(term);
+        }
+        if (terms.size() > 1000) throw new IllegalArgumentException(label + "一次最多解析 1000 个词");
+        return new ArrayList<>(terms);
     }
 
     private PromptOptionVO toVO(Map<String, Object> row) {

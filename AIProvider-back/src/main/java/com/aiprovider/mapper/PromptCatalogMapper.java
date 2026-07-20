@@ -23,10 +23,11 @@ public interface PromptCatalogMapper {
             "<if test='query != null'>AND (p.Id LIKE CONCAT('%',#{query},'%') OR p.Name LIKE CONCAT('%',#{query},'%') OR p.Prompt LIKE CONCAT('%',#{query},'%'))</if>",
             "<if test='category != null'>AND p.Category=#{category}</if>",
             "<if test='enabled != null'>AND p.Enabled=#{enabled}</if>",
+            "<if test='type != null'>AND p.Type=#{type}</if>",
             "</where>",
             "ORDER BY p.Category, p.Type, p.SortOrder, p.Id LIMIT #{limit} OFFSET #{offset}",
             "</script>"})
-    List<Map<String, Object>> findOptionPage(@Param("query") String query, @Param("category") String category, @Param("enabled") Boolean enabled, @Param("limit") int limit, @Param("offset") long offset);
+    List<Map<String, Object>> findOptionPage(@Param("query") String query, @Param("category") String category, @Param("enabled") Boolean enabled, @Param("type") String type, @Param("limit") int limit, @Param("offset") long offset);
 
     @Select({"<script>",
             "SELECT COUNT(*) FROM c_PromptOptions",
@@ -34,9 +35,10 @@ public interface PromptCatalogMapper {
             "<if test='query != null'>AND (Id LIKE CONCAT('%',#{query},'%') OR Name LIKE CONCAT('%',#{query},'%') OR Prompt LIKE CONCAT('%',#{query},'%'))</if>",
             "<if test='category != null'>AND Category=#{category}</if>",
             "<if test='enabled != null'>AND Enabled=#{enabled}</if>",
+            "<if test='type != null'>AND Type=#{type}</if>",
             "</where>",
             "</script>"})
-    long countOptions(@Param("query") String query, @Param("category") String category, @Param("enabled") Boolean enabled);
+    long countOptions(@Param("query") String query, @Param("category") String category, @Param("enabled") Boolean enabled, @Param("type") String type);
 
     @Select({"<script>",
             "SELECT p.Id id, p.Category category, p.Name name, p.Prompt prompt, p.Type type, p.ReverseId reverseId,",
@@ -48,6 +50,20 @@ public interface PromptCatalogMapper {
             "<foreach collection='ids' item='id' open='(' separator=',' close=')'>#{id}</foreach>",
             "</script>"})
     List<Map<String, Object>> findOptionsByIds(@Param("ids") List<String> ids);
+
+    @Select({"<script>",
+            "SELECT p.Id id, p.Category category, p.Name name, p.Prompt prompt, p.Type type, p.ReverseId reverseId,",
+            "CASE WHEN p.Type='positive' THEN p.Prompt ELSE NULL END positivePrompt,",
+            "CASE WHEN p.Type='negative' THEN p.Prompt ELSE n.Prompt END negativePrompt,",
+            "p.SortOrder sortOrder, p.Enabled enabled, p.AllowMultiple allowMultiple FROM c_PromptOptions p",
+            "LEFT JOIN c_PromptOptions n ON n.Id=p.ReverseId AND n.Type='negative'",
+            "WHERE p.Enabled=TRUE AND p.Type=#{type} AND (",
+            "<foreach collection='terms' item='term' separator=' OR '>",
+            "LOCATE(CONCAT(',', LOWER(#{term}), ','), LOWER(CONCAT(',', REPLACE(p.Prompt, ', ', ','), ','))) &gt; 0",
+            "</foreach>",
+            ") ORDER BY p.Category, p.SortOrder, p.Id",
+            "</script>"})
+    List<Map<String, Object>> findEnabledOptionsByTerms(@Param("terms") List<String> terms, @Param("type") String type);
 
     @Select("SELECT Prompt FROM c_PromptTemplates WHERE Id='general_negative' AND Enabled=TRUE")
     String findGeneralNegativePrompt();

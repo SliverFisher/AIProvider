@@ -11,9 +11,10 @@ public class PromptCatalogRepository {
     public PromptCatalogRepository(PromptCatalogMapper mapper) { this.mapper = mapper; }
     public List<Map<String, Object>> findEnabledOptions() { return mapper.findEnabledOptions(); }
     public List<Map<String, Object>> findEnabledNegativeOptions() { return mapper.findEnabledNegativeOptions(); }
-    public List<Map<String, Object>> findOptionPage(String query, String category, Boolean enabled, int limit, long offset) { return mapper.findOptionPage(query, category, enabled, limit, offset); }
-    public long countOptions(String query, String category, Boolean enabled) { return mapper.countOptions(query, category, enabled); }
+    public List<Map<String, Object>> findOptionPage(String query, String category, Boolean enabled, String type, int limit, long offset) { return mapper.findOptionPage(query, category, enabled, type, limit, offset); }
+    public long countOptions(String query, String category, Boolean enabled, String type) { return mapper.countOptions(query, category, enabled, type); }
     public List<Map<String, Object>> findOptionsByIds(List<String> ids) { return mapper.findOptionsByIds(ids); }
+    public List<Map<String, Object>> findEnabledOptionsByTerms(List<String> terms, String type) { return mapper.findEnabledOptionsByTerms(terms, type); }
     public String findGeneralNegativePrompt() { return mapper.findGeneralNegativePrompt(); }
     public boolean existsOption(String id) { return mapper.countOption(id) > 0; }
     public void insertOption(PromptCatalogMapper.OptionRecord option) { mapper.insertOption(option); }
