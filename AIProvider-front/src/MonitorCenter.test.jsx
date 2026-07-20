@@ -16,7 +16,7 @@ describe("MonitorCenter request chart", () => {
         aliyun: { displayName: "阿里云杭州", status: "UP", collectedAt: "2026-07-15T02:00:00+08:00", memory: { available: true, usedBytes: 1, totalBytes: 4 }, disk: { available: true, usedBytes: 1, totalBytes: 8 }, network: { available: true }, traffic: { available: false }, instance: { instanceId: "i-aliyun" } }
       });
       if (url.endsWith("/ai-overview")) return json({ totalRequests: 5, successRate: 80, failureCount: 1, p95DurationMs: 420 });
-      if (url.endsWith("/aws-billing")) return json({ collectedAt: "2026-07-15T02:00:00+08:00", plan: { available: true, type: "FREE", status: "ACTIVE", remainingCredits: 90, currency: "USD" }, cost: { available: true, netUnblendedCost: 1.25, currency: "USD", estimated: true }, credits: { available: true, remainingAmount: 90, currency: "USD", items: [] }, freeTier: { available: true, items: [{ service: "AmazonEBS", description: "EBS storage", actual: 20, limit: 30, unit: "GB-Mo", usagePercent: 66.7 }] } });
+      if (url.endsWith("/aws-billing")) return json({ collectedAt: "2026-07-15T02:00:00+08:00", plan: { available: true, type: "FREE", status: "ACTIVE", remainingCredits: 174.32, currency: "USD" }, cost: { available: true, netUnblendedCost: 1.25, currency: "USD", estimated: true }, credits: { available: true, remainingAmount: 180, currency: "USD", items: [] }, freeTier: { available: true, items: [{ service: "AmazonEBS", description: "EBS storage", actual: 20, limit: 30, unit: "GB-Mo", usagePercent: 66.7 }] } });
       return json([{ bucket: "2026-07-15T02:00:00+08:00", totalRequests: 5, errorRate: 20, avgDurationMs: 180, p95DurationMs: 420 }]);
     }));
   });
@@ -49,7 +49,8 @@ describe("MonitorCenter request chart", () => {
     expect(await screen.findByText("FREE · ACTIVE")).toBeTruthy();
     expect(screen.getByText("本月净费用（预估）")).toBeTruthy();
     expect(screen.getByText(/1\.25/)).toBeTruthy();
-    expect(screen.getByText(/90\.00/)).toBeTruthy();
+    expect(screen.getByText(/174\.32/)).toBeTruthy();
+    expect(screen.queryByText(/180\.00/)).toBeNull();
     fireEvent.click(screen.getByText("免费额度用量明细"));
     expect(screen.getByText("EBS storage")).toBeTruthy();
   });

@@ -88,7 +88,7 @@ function AwsBilling({ billing }) {
     <header><Coins /><div><h2>AWS 余额与本月费用</h2><span>{!hasBilling ? "正在读取真实账单接口" : sourceErrors.length ? `${4 - sourceErrors.length}/4 路真实接口可用` : "4 路 AWS 账单接口已连接"}</span></div><b className={sourceErrors.length ? "warning" : "normal"}>{!hasBilling ? "读取中" : plan.available ? `${plan.type || "—"} · ${plan.status || "—"}` : "不可用"}</b></header>
     <div className="aws-billing-stats">
       <div><span>本月净费用{cost.estimated ? "（预估）" : ""}</span><strong>{cost.available ? money(cost.netUnblendedCost, cost.currency) : "—"}</strong></div>
-      <div><span>Credits 剩余</span><strong>{credits.available ? money(credits.remainingAmount, credits.currency) : plan.available ? money(plan.remainingCredits, plan.currency) : "—"}</strong></div>
+      <div><span>Credits 剩余</span><strong>{plan.available && plan.remainingCredits != null ? money(plan.remainingCredits, plan.currency) : credits.available ? money(credits.remainingAmount, credits.currency) : "—"}</strong></div>
       <div><span>免费额度项目</span><strong>{freeTier.available ? `${risks.length} 项` : "—"}</strong></div>
     </div>
     {risks.length > 0 && <details className="aws-free-tier"><summary><Gift />免费额度用量明细</summary><div>{risks.map((item, index) => <div key={`${item.service}-${item.usageType}-${index}`}><span>{item.description || item.service || item.usageType}</span><strong>{Number(item.actual || 0).toLocaleString("zh-CN")} / {Number(item.limit || 0).toLocaleString("zh-CN")} {item.unit || ""}</strong><i><b style={{ width: `${Math.min(100, Number(item.usagePercent || 0))}%` }} /></i></div>)}</div></details>}
