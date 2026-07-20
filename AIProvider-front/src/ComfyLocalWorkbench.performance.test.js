@@ -24,4 +24,13 @@ describe("ComfyLocalWorkbench active-task rendering", () => {
     expect(source).not.toContain("for (const entry of entries)");
     expect(source).not.toContain("while (submitted < total");
   });
+
+  it("uses database ids for every local-image queue mutation", () => {
+    const source = readFileSync(sourcePath, "utf8");
+    expect(source).toContain('fetch("/api/local-generated-images/trash", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ platform, ids: localIds }) })');
+    expect(source).toContain('fetch("/api/local-generated-images/restore", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ platform, ids: localIds }) })');
+    expect(source).toContain('fetch("/api/local-generated-images/delete", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ platform, ids: localIds }) })');
+    expect(source).not.toMatch(/local-generated-images\/(?:trash|restore|delete)[^\n]+paths/);
+    expect(source).toContain('call("/api/gallery/delete", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ paths: localPaths }) }');
+  });
 });
