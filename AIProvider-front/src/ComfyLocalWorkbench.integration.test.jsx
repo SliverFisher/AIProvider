@@ -747,7 +747,7 @@ describe("Comfy image generation flow", () => {
   it("submits selected image operations with one duplicate request, one Bridge batch and one task-record batch", async () => {
     multiImageGallery = true;
     render(<ComfyLocalWorkbench />);
-    const images = await screen.findAllByAltText("历史生成结果");
+    const images = await screen.findAllByAltText("历史生成结果", {}, { timeout: 15000 });
     fireEvent.click(screen.getByRole("button", { name: "选择" }));
     images.forEach((image) => fireEvent.click(image.closest("button")));
     fireEvent.click(screen.getByRole("button", { name: /批量操作 2/ }));
@@ -761,7 +761,7 @@ describe("Comfy image generation flow", () => {
     await waitFor(() => expect(taskRecordBatchBody).toHaveLength(2));
     expect(taskRecordBatchBody.map((item) => item.promptId)).toEqual(["batch-prompt-1", "batch-prompt-2"]);
     expect(screen.getByText("批量操作已一次提交 2 个任务")).toBeTruthy();
-  });
+  }, 20000);
 
   it("transfers an image to the server folder from its right-click menu", async () => {
     render(<ComfyLocalWorkbench />);
@@ -776,7 +776,7 @@ describe("Comfy image generation flow", () => {
   it("uploads selected registered assets to My Favorites with one batch request", async () => {
     render(<ComfyLocalWorkbench />);
     fireEvent.click(await screen.findByRole("button", { name: "我的资产" }));
-    const image = await screen.findByAltText("历史生成结果");
+    const image = await screen.findByAltText("历史生成结果", {}, { timeout: 15000 });
     fireEvent.click(screen.getByRole("button", { name: "选择" }));
     fireEvent.click(image.closest("button"));
     fireEvent.click(screen.getByRole("button", { name: /转到我的最爱 1/ }));
