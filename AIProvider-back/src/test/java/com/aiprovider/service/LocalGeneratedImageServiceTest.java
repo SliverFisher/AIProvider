@@ -1,9 +1,10 @@
 package com.aiprovider.service;
 
 import com.aiprovider.model.dto.LocalGeneratedImageBatchDTO;
+import com.aiprovider.model.dto.LocalGeneratedImageIdsDTO;
 import com.aiprovider.model.dto.LocalGeneratedImageItemDTO;
-import com.aiprovider.model.dto.LocalGeneratedImagePathsDTO;
 import com.aiprovider.model.vo.GalleryRecordPageVO;
+import com.aiprovider.model.vo.LocalGeneratedImageBatchResultVO;
 import com.aiprovider.repository.LocalGeneratedImageRepository;
 import org.junit.jupiter.api.Test;
 import java.util.*;
@@ -21,7 +22,10 @@ class LocalGeneratedImageServiceTest {
         LocalGeneratedImageBatchDTO batch = new LocalGeneratedImageBatchDTO();
         batch.setPlatform("Windows"); batch.setItems(Collections.singletonList(item));
 
-        assertThat(service.saveBatch(batch)).isEqualTo(1);
+        when(repository.findByPathHashes(eq("Windows"), anyList())).thenReturn(Collections.singletonList(Map.of("id", 7L, "imagePath", "aimaid/no-prompt.png")));
+        LocalGeneratedImageBatchResultVO result = service.saveBatch(batch);
+        assertThat(result.getSaved()).isEqualTo(1);
+        assertThat(result.getItems()).extracting(row -> row.get("id")).containsExactly(7L);
         assertThat(item.getPrompt()).isNull();
         assertThat(item.getNegativePrompt()).isNull();
         verify(repository).upsertBatch(eq("Windows"), argThat(rows -> rows.size() == 1 && rows.get(0).get("item") == item));
@@ -39,14 +43,14 @@ class LocalGeneratedImageServiceTest {
         assertThat(page.getItems()).singleElement().satisfies(item -> assertThat(item.get("id")).isEqualTo(101L));
     }
 
-    @Test void changesQueueStateByStableNormalizedPathHash() {
+    @Test void changesQueueStateByStableDatabaseIds() {
         LocalGeneratedImageRepository repository = mock(LocalGeneratedImageRepository.class);
         when(repository.trash(eq("Windows"), anyList())).thenReturn(1);
-        LocalGeneratedImagePathsDTO dto = new LocalGeneratedImagePathsDTO();
-        dto.setPlatform("Windows"); dto.setPaths(Collections.singletonList("AIMAID\\Result.PNG"));
+        LocalGeneratedImageIdsDTO dto = new LocalGeneratedImageIdsDTO();
+        dto.setPlatform("Windows"); dto.setIds(Arrays.asList(42L, 42L));
 
         assertThat(new LocalGeneratedImageService(repository).trash(dto)).isEqualTo(1);
 
-        verify(repository).trash(eq("Windows"), argThat(items -> items.size() == 1 && items.get(0).matches("[0-9a-f]{64}")));
+        verify(repository).trash("Windows", Collections.singletonList(42L));
     }
 }

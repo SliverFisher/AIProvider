@@ -81,6 +81,8 @@ describe("Comfy image generation flow", () => {
   let customQueue;
   let progressFails;
   let deletedPaths;
+  let localMutationIds;
+  let localTrashRequests;
   let incrementalHistoryRun;
   let incrementalHistoryAlreadyPresent;
   let existingHistoryAlreadyPresent;
@@ -120,6 +122,8 @@ describe("Comfy image generation flow", () => {
     customQueue = null;
     progressFails = false;
     deletedPaths = [];
+    localMutationIds = [];
+    localTrashRequests = 0;
     incrementalHistoryRun = false;
     incrementalHistoryAlreadyPresent = false;
     existingHistoryAlreadyPresent = false;
@@ -205,8 +209,10 @@ describe("Comfy image generation flow", () => {
         return json({ success: true, deleted: deletedPaths.length });
       }
       if (url.endsWith("/api/local-generated-images/trash") && options.method === "POST") {
-        deletedPaths.push(...JSON.parse(options.body).paths);
-        return json({ code: 200, data: { trashed: deletedPaths.length } });
+        const ids = JSON.parse(options.body).ids;
+        localTrashRequests += 1;
+        localMutationIds.push(...ids);
+        return json({ code: 200, data: { trashed: ids.length } });
       }
       if (url.endsWith("/api/local-generated-images/restore") && options.method === "POST") return json({ code: 200, data: { restored: 1 } });
       if (url.endsWith("/api/local-generated-images/delete") && options.method === "POST") return json({ code: 200, data: { deleted: 1 } });
@@ -220,7 +226,10 @@ describe("Comfy image generation flow", () => {
       }
       if (url.endsWith("/api/logs/client") && options.method === "POST") return json({ success: true });
       if (url.includes("/api/comfy-tasks/") && url.endsWith("/complete") && options.method === "POST") return json({ code: 200, data: { completed: true } });
-      if (url.endsWith("/api/local-generated-images/batch") && options.method === "POST") return json({ code: 200, data: { saved: 1 } });
+      if (url.endsWith("/api/local-generated-images/batch") && options.method === "POST") {
+        const items = JSON.parse(options.body).items;
+        return json({ code: 200, data: { saved: items.length, items: items.map((item, index) => ({ ...item, id: 900 + index })) } });
+      }
       if (url.endsWith("/comfy/aiprovider/progress") && progressFails) return json({ message: "progress extension unavailable" }, 404);
       if (url.endsWith("/comfy/aiprovider/progress")) return externalRun
         ? json({ promptId: "external-prompt", nodes: { "5": { state: "finished" }, "4": { state: "running", value: 5, max: 10 } } })
@@ -258,7 +267,7 @@ describe("Comfy image generation flow", () => {
         const page = Number(url.match(/[?&]page=(\d+)/)?.[1] || 1);
         const currentImages = items.reduce((sum, item) => sum + item.images.length, 0);
         const records = items.flatMap((item) => item.images.map((image, index) => ({
-          id: `${item.id}-${index}`, platform: "Windows", promptId: item.promptId || item.id,
+          id: 100 + index, platform: "Windows", promptId: item.promptId || item.id,
           imagePath: image.path, fileName: image.filename, prompt: item.prompt, taskCreatedAt: item.createdAt,
           status: "ACTIVE",
         })));
@@ -674,6 +683,19 @@ describe("Comfy image generation flow", () => {
     expect(screen.getByText("已一次提交 3 个任务到 Bridge 队列")).toBeTruthy();
   });
 
+  it("moves selected local images with one backend ID batch", async () => {
+    multiImageGallery = true;
+    render(<ComfyLocalWorkbench />);
+    const images = await screen.findAllByAltText("历史生成结果");
+    fireEvent.click(screen.getByRole("button", { name: "选择" }));
+    images.forEach((image) => fireEvent.click(image.closest("button")));
+
+    fireEvent.click(screen.getByRole("button", { name: "删除 2" }));
+
+    await waitFor(() => expect(localMutationIds).toEqual([100, 101]));
+    expect(localTrashRequests).toBe(1);
+  });
+
   it("builds a weighted prompt from image assets before lucky generation", async () => {
     render(<ComfyLocalWorkbench />);
     await screen.findByRole("button", { name: "手气不错" });
@@ -694,7 +716,7 @@ describe("Comfy image generation flow", () => {
     fireEvent.contextMenu(document.querySelector(".history-lightbox"));
     fireEvent.click(screen.getByRole("button", { name: "删除" }));
 
-    await waitFor(() => expect(deletedPaths).toEqual(["aimaid/done.png"]));
+    await waitFor(() => expect(localMutationIds).toEqual([100]));
     expect(screen.queryByText("确认删除")).toBeNull();
     expect(screen.getByText("done-2.png")).toBeTruthy();
     expect(screen.getByText("1 / 1")).toBeTruthy();
@@ -712,7 +734,7 @@ describe("Comfy image generation flow", () => {
     fireEvent.contextMenu(document.querySelector(".history-lightbox"));
     fireEvent.click(screen.getByRole("button", { name: "删除" }));
 
-    await waitFor(() => expect(deletedPaths).toEqual(["aimaid/done-2.png"]));
+    await waitFor(() => expect(localMutationIds).toEqual([101]));
     expect(screen.getByText("done.png")).toBeTruthy();
     expect(screen.getByText("1 / 1")).toBeTruthy();
   });
@@ -741,7 +763,7 @@ describe("Comfy image generation flow", () => {
     expect(screen.queryByText("只删除当前这张本机图片？此操作不可恢复。")).toBeNull();
 
     fireEvent.keyDown(window, { key: "Delete" });
-    await waitFor(() => expect(deletedPaths).toEqual(["aimaid/done.png"]));
+    await waitFor(() => expect(localMutationIds).toEqual([100]));
   });
 
   it("submits selected image operations with one duplicate request, one Bridge batch and one task-record batch", async () => {

@@ -1,9 +1,10 @@
 package com.aiprovider.service;
 
 import com.aiprovider.model.dto.LocalGeneratedImageBatchDTO;
+import com.aiprovider.model.dto.LocalGeneratedImageIdsDTO;
 import com.aiprovider.model.dto.LocalGeneratedImageItemDTO;
-import com.aiprovider.model.dto.LocalGeneratedImagePathsDTO;
 import com.aiprovider.model.vo.GalleryRecordPageVO;
+import com.aiprovider.model.vo.LocalGeneratedImageBatchResultVO;
 import com.aiprovider.repository.LocalGeneratedImageRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -18,11 +19,12 @@ public class LocalGeneratedImageService {
     public LocalGeneratedImageService(LocalGeneratedImageRepository repository) { this.repository = repository; }
 
     @Transactional
-    public int saveBatch(LocalGeneratedImageBatchDTO dto) {
+    public LocalGeneratedImageBatchResultVO saveBatch(LocalGeneratedImageBatchDTO dto) {
         String platform = platform(dto == null ? null : dto.getPlatform());
         List<LocalGeneratedImageItemDTO> items = dto == null || dto.getItems() == null ? Collections.emptyList() : dto.getItems();
         if (items.isEmpty() || items.size() > 100) throw new IllegalArgumentException("本机生成图片记录数量必须在 1 到 100 之间");
         Set<String> paths = new HashSet<>();
+        List<String> pathHashes = new ArrayList<>();
         List<Map<String,Object>> rows = new ArrayList<>();
         for (LocalGeneratedImageItemDTO item : items) {
             validate(item);
@@ -38,10 +40,12 @@ public class LocalGeneratedImageService {
             item.setLorasJson(clean(item.getLorasJson(), 16000));
             if (item.getGenerationDurationMs() != null && item.getGenerationDurationMs() < 0)
                 throw new IllegalArgumentException("生成耗时不能为负数");
-            rows.add(Map.of("pathHash", sha256(pathKey), "item", item));
+            String pathHash = sha256(pathKey);
+            pathHashes.add(pathHash);
+            rows.add(Map.of("pathHash", pathHash, "item", item));
         }
         repository.upsertBatch(platform, rows);
-        return rows.size();
+        return new LocalGeneratedImageBatchResultVO(rows.size(), repository.findByPathHashes(platform, pathHashes));
     }
 
     public GalleryRecordPageVO page(String platformValue, int page, int pageSize, String statusValue) {
@@ -56,18 +60,18 @@ public class LocalGeneratedImageService {
     }
 
     @Transactional
-    public int trash(LocalGeneratedImagePathsDTO dto) {
-        return repository.trash(platform(dto == null ? null : dto.getPlatform()), pathHashes(dto));
+    public int trash(LocalGeneratedImageIdsDTO dto) {
+        return repository.trash(platform(dto == null ? null : dto.getPlatform()), validIds(dto));
     }
 
     @Transactional
-    public int restore(LocalGeneratedImagePathsDTO dto) {
-        return repository.restore(platform(dto == null ? null : dto.getPlatform()), pathHashes(dto));
+    public int restore(LocalGeneratedImageIdsDTO dto) {
+        return repository.restore(platform(dto == null ? null : dto.getPlatform()), validIds(dto));
     }
 
     @Transactional
-    public int delete(LocalGeneratedImagePathsDTO dto) {
-        return repository.delete(platform(dto == null ? null : dto.getPlatform()), pathHashes(dto));
+    public int delete(LocalGeneratedImageIdsDTO dto) {
+        return repository.delete(platform(dto == null ? null : dto.getPlatform()), validIds(dto));
     }
 
     private static void validate(LocalGeneratedImageItemDTO item) {
@@ -88,18 +92,12 @@ public class LocalGeneratedImageService {
             throw new IllegalArgumentException("status 仅支持 ACTIVE 或 TRASHED");
         return status;
     }
-    private static List<String> pathHashes(LocalGeneratedImagePathsDTO dto) {
-        List<String> paths = dto == null || dto.getPaths() == null ? Collections.emptyList() : dto.getPaths();
-        if (paths.isEmpty() || paths.size() > 100) throw new IllegalArgumentException("图片路径数量必须在 1 到 100 之间");
-        String platform = platform(dto.getPlatform());
-        LinkedHashSet<String> hashes = new LinkedHashSet<>();
-        for (String value : paths) {
-            if (value == null || value.trim().isEmpty() || value.length() > 2000) throw new IllegalArgumentException("图片路径不能为空且不能超过 2000 字符");
-            String path = value.trim().replace('\\', '/');
-            String pathKey = "Windows".equals(platform) ? path.toLowerCase(Locale.ROOT) : path;
-            hashes.add(sha256(pathKey));
-        }
-        return new ArrayList<>(hashes);
+    private static List<Long> validIds(LocalGeneratedImageIdsDTO dto) {
+        List<Long> ids = new ArrayList<>(new LinkedHashSet<>(dto == null || dto.getIds() == null
+                ? Collections.emptyList() : dto.getIds()));
+        ids.removeIf(id -> id == null || id <= 0);
+        if (ids.isEmpty() || ids.size() > 100) throw new IllegalArgumentException("本机图片 ID 数量必须在 1 到 100 之间");
+        return ids;
     }
     private static String clean(String value, int max) {
         if (value == null || value.trim().isEmpty()) return null;

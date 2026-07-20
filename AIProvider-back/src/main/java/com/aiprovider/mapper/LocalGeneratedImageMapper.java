@@ -25,15 +25,22 @@ public interface LocalGeneratedImageMapper {
     @Select("SELECT COUNT(*) FROM c_LocalGeneratedImages WHERE Platform=#{platform} AND Status=#{status}")
     long count(@Param("platform") String platform, @Param("status") String status);
 
-    @Update("<script>UPDATE c_LocalGeneratedImages SET Status='TRASHED',UpdatedAt=CURRENT_TIMESTAMP(3) WHERE Platform=#{platform} AND Status='ACTIVE' AND PathHash IN " +
-            "<foreach collection='pathHashes' item='hash' open='(' separator=',' close=')'>#{hash}</foreach></script>")
-    int trash(@Param("platform") String platform, @Param("pathHashes") List<String> pathHashes);
+    @Select({"<script>",
+            "SELECT Id id,Platform platform,PromptId promptId,ImagePath imagePath,FileName fileName,Status status,WorkflowId workflowId,WorkflowName workflowName,Prompt prompt,NegativePrompt negativePrompt,LorasJson lorasJson,Seed seed,Steps steps,Cfg cfg,Sampler sampler,Scheduler scheduler,Width width,Height height,TaskCreatedAt taskCreatedAt,GenerationCompletedAt generationCompletedAt,GenerationDurationMs generationDurationMs,CreatedAt createdAt,UpdatedAt updatedAt FROM c_LocalGeneratedImages WHERE Platform=#{platform} AND PathHash IN",
+            "<foreach collection='pathHashes' item='hash' open='(' separator=',' close=')'>#{hash}</foreach>",
+            "ORDER BY UpdatedAt DESC,Id DESC",
+            "</script>"})
+    List<Map<String,Object>> findByPathHashes(@Param("platform") String platform, @Param("pathHashes") List<String> pathHashes);
 
-    @Update("<script>UPDATE c_LocalGeneratedImages SET Status='ACTIVE',UpdatedAt=CURRENT_TIMESTAMP(3) WHERE Platform=#{platform} AND Status='TRASHED' AND PathHash IN " +
-            "<foreach collection='pathHashes' item='hash' open='(' separator=',' close=')'>#{hash}</foreach></script>")
-    int restore(@Param("platform") String platform, @Param("pathHashes") List<String> pathHashes);
+    @Update("<script>UPDATE c_LocalGeneratedImages SET Status='TRASHED',UpdatedAt=CURRENT_TIMESTAMP(3) WHERE Platform=#{platform} AND Status='ACTIVE' AND Id IN " +
+            "<foreach collection='ids' item='id' open='(' separator=',' close=')'>#{id}</foreach></script>")
+    int trash(@Param("platform") String platform, @Param("ids") List<Long> ids);
 
-    @Delete("<script>DELETE FROM c_LocalGeneratedImages WHERE Platform=#{platform} AND PathHash IN " +
-            "<foreach collection='pathHashes' item='hash' open='(' separator=',' close=')'>#{hash}</foreach></script>")
-    int delete(@Param("platform") String platform, @Param("pathHashes") List<String> pathHashes);
+    @Update("<script>UPDATE c_LocalGeneratedImages SET Status='ACTIVE',UpdatedAt=CURRENT_TIMESTAMP(3) WHERE Platform=#{platform} AND Status='TRASHED' AND Id IN " +
+            "<foreach collection='ids' item='id' open='(' separator=',' close=')'>#{id}</foreach></script>")
+    int restore(@Param("platform") String platform, @Param("ids") List<Long> ids);
+
+    @Delete("<script>DELETE FROM c_LocalGeneratedImages WHERE Platform=#{platform} AND Id IN " +
+            "<foreach collection='ids' item='id' open='(' separator=',' close=')'>#{id}</foreach></script>")
+    int delete(@Param("platform") String platform, @Param("ids") List<Long> ids);
 }

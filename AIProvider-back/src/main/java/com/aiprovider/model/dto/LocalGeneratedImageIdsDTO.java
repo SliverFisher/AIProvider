@@ -3,11 +3,12 @@ package com.aiprovider.model.dto;
 import java.util.ArrayList;
 import java.util.List;
 
-public class LocalGeneratedImagePathsDTO {
+public class LocalGeneratedImageIdsDTO {
     private String platform;
-    private List<String> paths = new ArrayList<>();
+    private List<Long> ids = new ArrayList<>();
+
     public String getPlatform() { return platform; }
     public void setPlatform(String platform) { this.platform = platform; }
-    public List<String> getPaths() { return paths; }
-    public void setPaths(List<String> paths) { this.paths = paths; }
+    public List<Long> getIds() { return ids; }
+    public void setIds(List<Long> ids) { this.ids = ids; }
 }
