@@ -11,7 +11,7 @@ describe("MonitorCenter request chart", () => {
     vi.stubGlobal("fetch", vi.fn(async (input) => {
       const url = String(input);
       if (url.endsWith("/cloud-servers")) return json({
-        aws: { displayName: "AWS 东京", status: "UP", collectedAt: "2026-07-15T02:00:00+08:00", memory: { available: true, usedBytes: 1, totalBytes: 2 }, disk: { available: true, usedBytes: 1, totalBytes: 2 }, network: { available: true, inboundBytesPerSecond: 1048576, outboundBytesPerSecond: 524288, monthInboundBytes: 100, monthOutboundBytes: 200 }, traffic: { available: true, status: "CLOUDWATCH_API_AWS_100GB_FREE_DTO", usedBytes: 200, totalBytes: 100000000000 }, instance: { instanceId: "i-aws", instanceType: "c7i-flex.large", availabilityZone: "ap-northeast-1c", publicIpv4: "35.78.120.126", awsApiStatus: "CLOUDWATCH_API_AVAILABLE" } },
+        aws: { displayName: "AWS 东京", status: "UP", collectedAt: "2026-07-15T02:00:00+08:00", memory: { available: true, usedBytes: 1, totalBytes: 2 }, disk: { available: true, usedBytes: 1, totalBytes: 2 }, network: { available: true, inboundBytesPerSecond: 1048576, outboundBytesPerSecond: 524288, monthInboundBytes: 30000000000, monthOutboundBytes: 20000000000 }, traffic: { available: true, status: "CLOUDWATCH_API_AWS_100GB_FREE_DTO", usedBytes: 20000000000, totalBytes: 100000000000, remainingBytes: 80000000000 }, instance: { instanceId: "i-aws", instanceType: "c7i-flex.large", availabilityZone: "ap-northeast-1c", publicIpv4: "35.78.120.126", awsApiStatus: "CLOUDWATCH_API_AVAILABLE" } },
         tencent: { displayName: "腾讯云", status: "OFFLINE", collectedAt: "2026-07-15T02:00:00+08:00", memory: { available: false }, disk: { available: false }, network: { available: false }, traffic: { available: false }, instance: { instanceId: "lhins-test", publicIpv4: "124.222.185.195", awsApiStatus: "NOT_APPLICABLE" } },
         aliyun: { displayName: "阿里云杭州", status: "UP", collectedAt: "2026-07-15T02:00:00+08:00", memory: { available: true, usedBytes: 1, totalBytes: 4 }, disk: { available: true, usedBytes: 1, totalBytes: 8 }, network: { available: true }, traffic: { available: false }, instance: { instanceId: "i-aliyun" } }
       });
@@ -53,5 +53,16 @@ describe("MonitorCenter request chart", () => {
     expect(screen.queryByText(/180\.00/)).toBeNull();
     fireEvent.click(screen.getByText("免费额度用量明细"));
     expect(screen.getByText("EBS storage")).toBeTruthy();
+  });
+
+  it("shows the AWS egress allowance without counting ingress", async () => {
+    render(<MonitorCenter />);
+    expect(await screen.findByText("入站速率（用户上传）")).toBeTruthy();
+    expect(screen.getByText("出站速率（用户下载）")).toBeTruthy();
+    expect(screen.getByText("近 30 分钟平均")).toBeTruthy();
+    const progress=screen.getByRole("progressbar",{ name: "免费出站额度" });
+    expect(progress.getAttribute("aria-valuenow")).toBe("20");
+    expect(screen.getByText(/20\.00 GB \/ 100\.00 GB/)).toBeTruthy();
+    expect(screen.getByText(/剩余 80\.00 GB/)).toBeTruthy();
   });
 });

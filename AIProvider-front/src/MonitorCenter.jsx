@@ -24,6 +24,7 @@ const bytes = (value) => {
 const percent = (used, total) => total ? Math.min(100, Math.max(0, used / total * 100)) : 0;
 const dateTime = (value) => value ? new Date(value).toLocaleString("zh-CN", { hour12: false }) : "—";
 const money = (value, currency = "USD") => value == null ? "—" : new Intl.NumberFormat("zh-CN", { style: "currency", currency: currency || "USD", maximumFractionDigits: 2 }).format(Number(value));
+const quotaGb = (value) => value == null ? "—" : `${(Number(value) / 1_000_000_000).toFixed(2)} GB`;
 const apiReason = (value) => value ? value.replace(/Exception$/, "").replace(/([a-z])([A-Z])/g, "$1 $2") : "AWS API 不可用";
 const CLOUD_LABELS = { aws: "AWS", tencent: "腾讯云" };
 const cloudLabel = (key, server) => server?.displayName || CLOUD_LABELS[key] || key.toUpperCase();
@@ -73,7 +74,7 @@ export default function MonitorCenter() {
     <div className="cloud-capacity-grid">
       <Capacity title="服务器内存" icon={Cpu} resource={server?.memory} collectedAt={server?.collectedAt} />
       <Capacity title="系统磁盘" icon={HardDrives} resource={server?.disk} collectedAt={server?.collectedAt} />
-      <Network network={server?.network} instance={server?.instance} />
+      <Network network={server?.network} traffic={server?.traffic} instance={server?.instance} />
       {selectedCloud === "aws" ? <AwsBilling billing={summary?.awsBilling} /> : <Traffic traffic={server?.traffic} provider={selectedCloud} providerLabel={selectedCloudLabel} />}
     </div>
   </section>;
@@ -149,10 +150,17 @@ function Capacity({ title, icon: Icon, resource, collectedAt }) {
   </article>;
 }
 
-function Network({ network, instance }) {
+function Network({ network, traffic, instance }) {
+  const usage = traffic?.available ? percent(traffic.usedBytes, traffic.totalBytes) : 0;
+  const tone = usage >= 90 ? "danger" : usage >= 70 ? "warning" : "normal";
   return <article className="cloud-card network-card">
-    <header><ArrowsDownUp /><div><h2>CloudWatch 网络</h2><span>{network?.available ? "AWS API 近实时采集" : "暂不可用"}</span></div></header>
-    <dl><div><dt>下载</dt><dd>{bytes(network?.inboundBytesPerSecond)}/s</dd></div><div><dt>上传</dt><dd>{bytes(network?.outboundBytesPerSecond)}/s</dd></div><div><dt>本月入站</dt><dd>{bytes(network?.monthInboundBytes)}</dd></div><div><dt>本月出站</dt><dd>{bytes(network?.monthOutboundBytes)}</dd></div></dl>
+    <header><ArrowsDownUp /><div><h2>CloudWatch 网络</h2><span>{network?.available ? "近 30 分钟平均" : "暂不可用"}</span></div>{traffic?.available && <b className={tone}>{usage.toFixed(1)}%</b>}</header>
+    <dl><div><dt>入站速率（用户上传）</dt><dd>{bytes(network?.inboundBytesPerSecond)}/s</dd></div><div><dt>出站速率（用户下载）</dt><dd>{bytes(network?.outboundBytesPerSecond)}/s</dd></div><div><dt>本月入站</dt><dd>{bytes(network?.monthInboundBytes)}</dd></div><div><dt>本月出站</dt><dd>{bytes(network?.monthOutboundBytes)}</dd></div></dl>
+    <div className="network-quota">
+      <div><span>免费出站额度</span><strong>{traffic?.available ? `${quotaGb(traffic.usedBytes)} / ${quotaGb(traffic.totalBytes)}` : "—"}</strong></div>
+      {traffic?.available && <div className="cloud-track" role="progressbar" aria-label="免费出站额度" aria-valuemin="0" aria-valuemax="100" aria-valuenow={Number(usage.toFixed(1))}><i className={tone} style={{ width: `${usage}%` }} /></div>}
+      <small>{traffic?.available ? `剩余 ${quotaGb(traffic.remainingBytes)} · CloudWatch 实例出站参考` : "出站额度暂不可用"}</small>
+    </div>
     <small>{instance?.instanceType || "实例类型未知"} · {instance?.availabilityZone || instance?.region || "区域未知"} · {instance?.publicIpv4 || "公网 IP 未知"}</small>
     <small>AWS API：{instance?.awsApiStatus || "不适用"} · 实例 {instance?.instanceId || "—"}</small>
   </article>;

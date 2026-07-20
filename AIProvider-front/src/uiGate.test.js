@@ -8,6 +8,12 @@ const read = (name) => readFileSync(path.join(srcDir, name), "utf8");
 const jsxFiles = readdirSync(srcDir).filter((name) => name.endsWith(".jsx"));
 
 describe("UI release gate", () => {
+  it("keeps monitor capacity cards compact instead of stretching to the viewport", () => {
+    const css=read("MonitorCenterEnhancements.css");
+    expect(css).toMatch(/\.workspace-monitor \.cloud-monitor\{[^}]*grid-template-rows:auto auto auto auto auto/);
+    expect(css).toMatch(/\.workspace-monitor \.cloud-capacity-grid\{[^}]*align-items:start/);
+  });
+
   it("mounts the persistent image workshop only after its first visit", () => {
     const app = read("App.jsx");
     expect(app).toContain('const [workshopMounted, setWorkshopMounted] = useState(() => viewFromPath() === "workshop")');
