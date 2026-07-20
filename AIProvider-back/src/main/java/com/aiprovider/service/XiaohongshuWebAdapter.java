@@ -167,6 +167,12 @@ public class XiaohongshuWebAdapter {
         }
     }
 
+    public boolean validate(String storageState) {
+        try (Playwright playwright=Playwright.create();Browser browser=launch(playwright);BrowserContext context=browser.newContext(new Browser.NewContextOptions().setStorageState(storageState))) {
+            context.setDefaultTimeout(timeoutMs);Page page=context.newPage();page.navigate("https://creator.xiaohongshu.com/creator/home",new Page.NavigateOptions().setTimeout(timeoutMs));return authenticated(context)&&!isLoginUrl(page.url());
+        } catch (PlaywrightException e) { return false; }
+    }
+
     static Map<String,Object> buildNotePayload(String title, String body, List<String> tags, String fileId, int width, int height, long byteSize) {
         Map<String,Object> common = new LinkedHashMap<>();
         common.put("type", "normal");

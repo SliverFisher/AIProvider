@@ -18,6 +18,7 @@ public class GeminiContentClient {
     private final ObjectMapper json; private final RestTemplate http;
     @Autowired public GeminiContentClient(ObjectMapper json,@Value("${content-ai.connect-timeout-ms:5000}") int connectTimeout,@Value("${content-ai.read-timeout-ms:90000}") int readTimeout){this(json,rest(connectTimeout,readTimeout));}
     GeminiContentClient(ObjectMapper json,RestTemplate http){this.json=json;this.http=http;}
+    public boolean validateApiKey(String apiBaseUrl,String apiKey){HttpHeaders headers=new HttpHeaders();headers.set("x-goog-api-key",apiKey);try{ResponseEntity<JsonNode> response=http.exchange(URI.create(apiBaseUrl.replaceAll("/+$","")+"/v1beta/models?pageSize=1"),HttpMethod.GET,new HttpEntity<>(headers),JsonNode.class);return response.getStatusCode().is2xxSuccessful()&&response.getBody()!=null&&response.getBody().path("models").isArray();}catch(HttpStatusCodeException e){throw new ContentAiException("GEMINI_HTTP_"+e.getRawStatusCode(),"Gemini 凭据验证失败（HTTP "+e.getRawStatusCode()+"）");}catch(RestClientException e){throw new ContentAiException("GEMINI_UNAVAILABLE","Gemini 服务不可用或请求超时",e);}}
     public String generate(GeminiRuntimeConfig config,String systemPrompt,String userPrompt){
         return generate(config,systemPrompt,userPrompt,false);
     }

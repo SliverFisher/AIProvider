@@ -39,4 +39,11 @@ describe("PlatformAccountCenter",()=>{
     expect(await screen.findByText("情报采集")).toBeTruthy();
     expect(screen.getByRole("button",{name:"归档账号"}).disabled).toBe(true);
   });
+  it("starts a platform QR session and shows only the returned QR image",async()=>{
+    const withDouyin={...page,items:[...page.items,{id:11,platform:"DOUYIN",accountKind:"SOCIAL",displayName:"抖音主账号",adapterType:"DOUYIN_WEB",enabled:true,connectionStatus:"NOT_CONFIGURED",credentialTypes:[],credentialHints:[]}]};
+    vi.stubGlobal("fetch",vi.fn(async(input,options)=>options?.method==="POST"&&String(input).endsWith("/11/login")?ok({sessionId:"qr-session",status:"WAITING_SCAN",qrImageDataUrl:"data:image/png;base64,AAAA",message:"等待扫码"}):ok(withDouyin)));
+    render(<PlatformAccountCenter/>);fireEvent.click(await screen.findByRole("button",{name:"扫码连接 抖音主账号"}));
+    expect(await screen.findByRole("dialog",{name:"抖音主账号 扫码登录"})).toBeTruthy();
+    expect(screen.getByAltText("抖音 登录二维码").getAttribute("src")).toBe("data:image/png;base64,AAAA");
+  });
 });

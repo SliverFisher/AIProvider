@@ -87,7 +87,6 @@ export default function TwitterPublisher() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
   const [notice, setNotice] = useState(null);
-  const [showConnect, setShowConnect] = useState(false);
   const [localAgent, setLocalAgent] = useState({ ready: false, connected: false, username: "", status: "DISCONNECTED" });
   const [polling, setPolling] = useState(false);
   const [lastPolledAt, setLastPolledAt] = useState(null);
@@ -108,7 +107,6 @@ export default function TwitterPublisher() {
         const connected = nextAccounts?.find((account) => account.sessionStatus === "CONNECTED");
         return connected ? String(connected.id) : nextAccounts?.[0] ? String(nextAccounts[0].id) : "";
       });
-      if (!nextAccounts?.length) setShowConnect(true);
     } catch (error) {
       setLoadError(error.message);
     } finally {
@@ -188,7 +186,6 @@ export default function TwitterPublisher() {
             accountId={accountId}
             setAccountId={setAccountId}
             selectedAccount={selectedAccount}
-            onConnect={() => setShowConnect(true)}
             onPublished={(id) => {
               setNotice({ type: "success", message: `发布任务 #${id} 已保存，正在通知 Chrome 扩展。` });
               load(true);
@@ -212,7 +209,7 @@ export default function TwitterPublisher() {
           }} />
         </div>
         <aside className="twitter-side-column">
-          <AccountPanel accounts={accounts} selected={accountId} onSelect={(id) => setAccountId(String(id))} onConnect={() => setShowConnect(true)} />
+          <AccountPanel accounts={accounts} selected={accountId} onSelect={(id) => setAccountId(String(id))} />
           <PollingPanel localAgent={localAgent} polling={polling} lastPolledAt={lastPolledAt} onPoll={() => pollNow(true)} onRefreshAgent={loadLocalAgent} />
           <div className="twitter-flow-card">
             <span>发布流程</span>
@@ -221,23 +218,11 @@ export default function TwitterPublisher() {
         </aside>
       </div>
 
-      {showConnect && <ConnectDialog onClose={() => setShowConnect(false)} onConnect={async (form) => {
-        const status = await extensionRequest("CONNECT", form, 200000);
-        if (!status.connected || !status.username) throw new Error("已打开 X，请先在当前 Chrome 登录账号，然后再次点击连接。");
-        const account = await request("/accounts/client-status", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ username: status.username, status: "CONNECTED" }) });
-        setLocalAgent({ ready: true, connected: true, username: status.username, status: "CONNECTED" });
-        return account;
-      }} onConnected={(account) => {
-        setShowConnect(false);
-        setAccountId(String(account.id));
-        setNotice({ type: "success", message: `@${account.username} 已连接，使用当前 Chrome 登录会话。` });
-        load(true);
-      }} />}
     </div>
   );
 }
 
-function Composer({ accounts, accountId, setAccountId, selectedAccount, onConnect, onPublished, onError }) {
+function Composer({ accounts, accountId, setAccountId, selectedAccount, onPublished, onError }) {
   const [content, setContent] = useState("");
   const [files, setFiles] = useState([]);
   const [previewing, setPreviewing] = useState(null);
@@ -269,7 +254,7 @@ function Composer({ accounts, accountId, setAccountId, selectedAccount, onConnec
 
   return (
     <section className="twitter-composer-card">
-      <header><div><span>NEW POST</span><h3>创建一条新推文</h3></div><button className="twitter-connect-shortcut" onClick={onConnect} aria-label="连接账号"><Plus /><span>连接账号</span></button></header>
+      <header><div><span>NEW POST</span><h3>创建一条新推文</h3></div><a className="twitter-connect-shortcut" href="/accounts">前往账号中心</a></header>
       <label className="twitter-account-select"><span>发送账号</span><select value={accountId} onChange={(event) => setAccountId(event.target.value)}><option value="">选择账号</option>{accounts.map((account) => <option key={account.id} value={account.id}>@{account.username} · {connectionLabel(account.sessionStatus)}</option>)}</select></label>
       <div className="twitter-editor-wrap">
         <textarea value={content} maxLength={1000} onChange={(event) => setContent(event.target.value)} placeholder="此刻正在发生什么？" />
@@ -286,8 +271,8 @@ function Composer({ accounts, accountId, setAccountId, selectedAccount, onConnec
   );
 }
 
-function AccountPanel({ accounts, selected, onSelect, onConnect }) {
-  return <section className="twitter-account-card"><header><div><span>ACCOUNTS</span><h3>发布账号</h3></div><button onClick={onConnect} aria-label="连接新账号"><Plus /></button></header><div className="twitter-account-list">{accounts.length ? accounts.map((account) => <button key={account.id} className={String(account.id) === String(selected) ? "active" : ""} onClick={() => onSelect(account.id)}><i className={account.sessionStatus === "CONNECTED" ? "online" : "offline"}><XLogo weight="fill" /></i><span><strong>@{account.username}</strong><small>{connectionLabel(account.sessionStatus)}</small></span>{String(account.id) === String(selected) && <CheckCircle weight="fill" />}</button>) : <div className="twitter-no-account"><XLogo /><span>还没有连接账号</span></div>}</div></section>;
+function AccountPanel({ accounts, selected, onSelect }) {
+  return <section className="twitter-account-card"><header><div><span>ACCOUNTS</span><h3>发布账号</h3></div><a href="/accounts" aria-label="前往账号中心">账号中心</a></header><div className="twitter-account-list">{accounts.length ? accounts.map((account) => <button key={account.id} className={String(account.id) === String(selected) ? "active" : ""} onClick={() => onSelect(account.id)}><i className={account.sessionStatus === "CONNECTED" ? "online" : "offline"}><XLogo weight="fill" /></i><span><strong>@{account.username}</strong><small>{connectionLabel(account.sessionStatus)}</small></span>{String(account.id) === String(selected) && <CheckCircle weight="fill" />}</button>) : <div className="twitter-no-account"><XLogo /><span>请先在账号中心配置 X 账号</span></div>}</div></section>;
 }
 
 function PollingPanel({ localAgent, polling, lastPolledAt, onPoll, onRefreshAgent }) {
@@ -313,19 +298,4 @@ function TaskImageThumb({ postId, image, onPreview }) {
 
 function ImagePreview({ value, onClose }) {
   return <div className="twitter-image-preview" onMouseDown={(event) => event.target === event.currentTarget && onClose()}><div><header><strong>{value.name}</strong><button onClick={onClose} aria-label="关闭图片预览"><X /></button></header><img src={value.src} alt={value.name} /></div></div>;
-}
-
-function ConnectDialog({ onClose, onConnect, onConnected }) {
-  const [username, setUsername] = useState("");
-  const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState("");
-  const submit = async (event) => {
-    event.preventDefault(); setError(""); setSubmitting(true);
-    try {
-      const account = await onConnect({ username });
-      onConnected(account);
-    } catch (requestError) { setError(requestError.message); }
-    finally { setSubmitting(false); }
-  };
-  return <div className="twitter-dialog-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !submitting) onClose(); }}><form className="twitter-connect-dialog twitter-extension-dialog" onSubmit={submit}><header><div className="twitter-dialog-logo"><XLogo weight="fill" /></div><div><span>DIRECT X WEB REQUEST</span><h3>连接当前 Chrome 的 X Session</h3><p>扩展直接读取当前 Chrome 的登录 Cookie，并调用 X Web 内部发帖接口。</p></div><button type="button" onClick={onClose} disabled={submitting} aria-label="关闭"><X /></button></header>{error && <div className="twitter-dialog-error"><WarningCircle weight="fill" /><span>{error}</span></div>}<div className="twitter-form-grid twitter-extension-account"><label><span>X 用户名 <small>只用于任务归属和生成推文链接</small></span><input autoFocus autoComplete="off" value={username} onChange={(event) => setUsername(event.target.value)} placeholder="不需要输入 @" pattern="[A-Za-z0-9_]{1,50}" required /></label></div><div className="twitter-connect-warning"><ShieldCheck weight="duotone" /><p><strong>不会跳转 X 页面或模拟点击</strong><span>扩展检查 auth_token 与 ct0，图片和文字通过 X 内部接口直接提交。</span></p></div><footer><button type="button" onClick={onClose} disabled={submitting}>取消</button><button type="submit" disabled={submitting}>{submitting ? <SpinnerGap className="spin" /> : <ShieldCheck weight="fill" />}{submitting ? "正在检查 Session" : "连接当前 Session"}</button></footer></form></div>;
 }

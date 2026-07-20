@@ -83,6 +83,13 @@ public class TwitterWebPublisher {
         }
     }
 
+    public boolean validateSession(String storageState) {
+        try (Playwright playwright = Playwright.create(); Browser browser = launch(playwright); BrowserContext context = browser.newContext(new Browser.NewContextOptions().setStorageState(storageState))) {
+            context.setDefaultTimeout(timeoutMs); Page page=context.newPage(); page.navigate("https://x.com/home",new Page.NavigateOptions().setTimeout(timeoutMs));
+            return authenticated(context) && !page.url().contains("/i/flow/login");
+        } catch (PlaywrightException e) { return false; }
+    }
+
     public String publish(String username, String storageState, String content, List<Path> images) {
         try (Playwright playwright = Playwright.create();
              Browser browser = launch(playwright);

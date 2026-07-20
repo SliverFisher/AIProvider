@@ -16,7 +16,7 @@ class PlatformAccountControllerTest {
         PlatformAccountUpdateDTO dto=new PlatformAccountUpdateDTO();dto.setDisplayName("Gemini 主服务");
         when(service.update(8L,dto)).thenReturn(account);
 
-        PlatformAccountController controller=new PlatformAccountController(service);
+        PlatformAccountController controller=new PlatformAccountController(service,mock(com.aiprovider.service.PlatformAccountLoginService.class),mock(com.aiprovider.service.PlatformAccountValidationService.class));
 
         assertSame(account,controller.update(8L,dto).getData());
         verify(service).update(8L,dto);

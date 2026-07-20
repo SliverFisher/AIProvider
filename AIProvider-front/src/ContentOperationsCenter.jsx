@@ -146,13 +146,10 @@ export default function ContentOperationsCenter() {
   const saveEntity = async (event, descriptor) => {
     event.preventDefault();
     const values = Object.fromEntries(new FormData(event.currentTarget));
-    const kind = typeof descriptor === "string" ? descriptor : descriptor.kind;
     const item = typeof descriptor === "string" ? null : descriptor.item;
-    if (kind === "account") values.publishMode = values.publishMode || "AUTO";
     if (item) values.enabled = values.enabled === "on";
-    const path = kind === "account" ? "/accounts" : kind === "collector" ? "/collection-accounts" : "/sources";
     try {
-      await request(`${path}${item ? `/${item.id}` : ""}`, {
+      await request(`/sources${item ? `/${item.id}` : ""}`, {
         method: item ? "PUT" : "POST",
         body: JSON.stringify(values),
       });
@@ -166,9 +163,8 @@ export default function ContentOperationsCenter() {
 
   const removeEntity = async () => {
     if (!deleteTarget) return;
-    const path = deleteTarget.kind === "account" ? "/accounts" : deleteTarget.kind === "collector" ? "/collection-accounts" : "/sources";
     try {
-      await request(`${path}/${deleteTarget.item.id}`, { method: "DELETE" });
+      await request(`/sources/${deleteTarget.item.id}`, { method: "DELETE" });
       setDeleteTarget(null);
       setNotice("已删除");
       await load();
@@ -274,20 +270,16 @@ export default function ContentOperationsCenter() {
     </nav>
 
     <main className="content-ops-workspace">
-      {tab === "overview" && <Overview data={data} onAddAccount={() => setDialog("account")} onUpdateAccount={updateAccount} />}
+      {tab === "overview" && <Overview data={data} onUpdateAccount={updateAccount} />}
 
       {tab === "accounts" && <AccountsWorkspace
         accounts={accounts}
         sources={data.sources}
         query={query}
         onQuery={setQuery}
-        onAdd={() => setDialog("account")}
-        onEdit={(item) => setDialog({ kind: "account", item })}
-        onDelete={(item) => setDeleteTarget({ kind: "account", item })}
         onUpdate={updateAccount}
         onError={setError}
         onSaved={() => setNotice("发布规则已保存")}
-        onConnected={load}
       />}
 
       {tab === "sources" && <SourcesWorkspace
@@ -297,7 +289,6 @@ export default function ContentOperationsCenter() {
         historySource={historySource}
         sourceResult={sourceResult}
         testingSourceId={testingSourceId}
-        onAddCollector={() => setDialog("collector")}
         onAddSource={() => setDialog("source")}
         onEdit={(kind, item) => setDialog({ kind, item })}
         onDelete={(kind, item) => setDeleteTarget({ kind, item })}
@@ -345,7 +336,7 @@ function StatusBadge({ value }) {
   return <span className={`ops-status ${statusClass(value)}`}>{statusLabel(value)}</span>;
 }
 
-function Overview({ data, onAddAccount, onUpdateAccount }) {
+function Overview({ data, onUpdateAccount }) {
   const metrics = [
     ["今日采集", data.counters.collectedToday, Database],
     ["待发布草稿", data.counters.readyDrafts, Clock],
@@ -375,7 +366,7 @@ function Overview({ data, onAddAccount, onUpdateAccount }) {
         </ol>
       </section>
       <section className="content-ops-panel ops-account-summary">
-        <SectionHeading eyebrow="ACCOUNTS" title="发布账号" description={`${data.accounts.length} 个账号`} actions={<button type="button" onClick={onAddAccount}><Plus />添加账号</button>} />
+        <SectionHeading eyebrow="ACCOUNTS" title="发布账号" description={`${data.accounts.length} 个账号`} actions={<a href="/accounts">前往账号中心</a>} />
         <div className="ops-summary-list">
           {data.accounts.length ? data.accounts.map((account) => <AccountSummaryRow key={account.id} account={account} onUpdate={onUpdateAccount} />) : <Empty text="还没有配置小红书账号" />}
         </div>
@@ -394,47 +385,45 @@ function AccountSummaryRow({ account, onUpdate }) {
   </article>;
 }
 
-function AccountsWorkspace({ accounts, sources, query, onQuery, onAdd, onEdit, onDelete, onUpdate, onError, onSaved, onConnected }) {
+function AccountsWorkspace({ accounts, sources, query, onQuery, onUpdate, onError, onSaved }) {
   return <section className="content-ops-panel ops-accounts-workspace">
-    <SectionHeading eyebrow="XIAOHONGSHU" title="发布账号" description="每个账号独立配置内容源和发布时机" actions={<button type="button" onClick={onAdd}><Plus />添加账号</button>} />
+    <SectionHeading eyebrow="XIAOHONGSHU" title="发布账号" description="登录信息由账号中心统一维护" actions={<a href="/accounts">前往账号中心</a>} />
     <UiSearchField className="ops-account-search" value={query} onChange={(event) => onQuery(event.target.value)} placeholder="搜索账号" aria-label="搜索账号" />
     <div className="ops-account-list">
       {accounts.length ? accounts.map((account) => <article className="ops-account-card" key={account.id}>
-        <AccountHeader account={account} onUpdate={onUpdate} onEdit={() => onEdit(account)} onDelete={() => onDelete(account)} />
+        <AccountHeader account={account} onUpdate={onUpdate} />
         <div className="ops-account-body">
           <AccountSourceBinding account={account} sources={sources} onError={onError} onSaved={onSaved} />
-          <XhsAccountActions account={account} onError={onError} onConnected={onConnected} />
+          <XhsAccountActions account={account} onError={onError} />
         </div>
       </article>) : <Empty text="没有匹配的账号" />}
     </div>
   </section>;
 }
 
-function AccountHeader({ account, onUpdate, onEdit, onDelete }) {
+function AccountHeader({ account, onUpdate }) {
   return <header className="ops-account-header">
     <span className="platform-mark">小</span>
     <span className="ops-account-identity"><b>{account.displayName}</b><small>{account.accountHandle || "未填写账号标识"}</small></span>
     <label className="ops-compact-field"><span>发布模式</span><select value={account.publishMode} onChange={(event) => onUpdate(account, { publishMode: event.target.value, enabled: account.enabled })}><option value="AUTO">全自动</option><option value="MANUAL">手动确认</option></select></label>
     <label className="native-switch ops-switch"><input type="checkbox" checked={account.enabled} onChange={(event) => onUpdate(account, { publishMode: account.publishMode, enabled: event.target.checked })} /><span>{account.enabled ? "启用" : "停用"}</span></label>
     <StatusBadge value={account.adapterStatus} />
-    <span className="row-actions"><button type="button" onClick={onEdit}>编辑</button><button type="button" className="danger" onClick={onDelete}>删除</button></span>
   </header>;
 }
 
-function SourcesWorkspace({ data, history, historyQuery, historySource, sourceResult, testingSourceId, onAddCollector, onAddSource, onEdit, onDelete, onTestSource, onClassify, onHistoryQuery, onHistorySource, onHistorySelect }) {
+function SourcesWorkspace({ data, history, historyQuery, historySource, sourceResult, testingSourceId, onAddSource, onEdit, onDelete, onTestSource, onClassify, onHistoryQuery, onHistorySource, onHistorySelect }) {
   return <div className="ops-sources-stack">
     <section className="content-ops-panel ops-source-management">
-      <SectionHeading eyebrow="COLLECTION" title="采集账号与内容源" description="凭据归采集账号管理，内容源只负责指定采集对象" actions={<><button type="button" onClick={onAddCollector}><Plus />添加采集账号</button><button type="button" className="primary" onClick={onAddSource} disabled={!data.collectionAccounts.length}><Plus />添加内容来源</button></>} />
+      <SectionHeading eyebrow="COLLECTION" title="采集账号与内容源" description="登录信息由账号中心统一维护，内容源只负责指定采集对象" actions={<><a href="/accounts">前往账号中心</a><button type="button" className="primary" onClick={onAddSource} disabled={!data.collectionAccounts.length}><Plus />添加内容来源</button></>} />
 
       <div className="ops-subsection">
         <header><h4>采集账号</h4><span>{data.collectionAccounts.length}</span></header>
         <div className="ops-collector-grid" aria-label="采集账号">
           {data.collectionAccounts.length ? data.collectionAccounts.map((account) => <article key={account.id}>
             <span className="source-platform">X</span>
-            <span><b>{account.displayName}</b><small>{account.adapterType === "TWITTER_WEB" ? "Cookie 登录" : "官方 API"}</small></span>
+            <span><b>{account.displayName}</b><small>{account.adapterType === "TWITTER_WEB" ? "X 网页采集" : "X 官方 API"}</small></span>
             <StatusBadge value={account.credentialConfigured ? account.enabled ? "READY" : "NOT_CONFIGURED" : "NOT_CONFIGURED"} />
-            <span className="row-actions"><button type="button" onClick={() => onEdit("collector", account)}>编辑</button><button type="button" className="danger" onClick={() => onDelete("collector", account)}>删除</button></span>
-          </article>) : <p className="ops-inline-empty">先添加一个 X 采集账号，Cookie 只需配置一次。</p>}
+          </article>) : <p className="ops-inline-empty">请先在账号中心配置 X 账号。</p>}
         </div>
       </div>
 
@@ -507,45 +496,15 @@ function AccountSourceBinding({ account, sources, onError, onSaved }) {
   </section>;
 }
 
-function XhsAccountActions({ account, onError, onConnected }) {
-  const [login, setLogin] = useState(null);
-  const [starting, setStarting] = useState(false);
+function XhsAccountActions({ account, onError }) {
   const [testing, setTesting] = useState(false);
   const [results, setResults] = useState(null);
-
-  useEffect(() => {
-    if (!login?.sessionId || login.status !== "WAITING_SCAN") return undefined;
-    let cancelled = false;
-    let timer;
-    const poll = async () => {
-      try {
-        const next = await request(`/accounts/${account.id}/xhs-login/${login.sessionId}`);
-        if (cancelled) return;
-        setLogin((previous) => ({ ...previous, ...next, qrImageDataUrl: next.qrImageDataUrl || previous?.qrImageDataUrl }));
-        if (next.status === "CONNECTED") await onConnected();
-        else if (next.status === "WAITING_SCAN") timer = setTimeout(poll, 2000);
-      } catch (caught) {
-        if (!cancelled) onError(caught.message);
-      }
-    };
-    timer = setTimeout(poll, 2000);
-    return () => { cancelled = true; clearTimeout(timer); };
-  }, [account.id, login?.sessionId, login?.status, onConnected, onError]);
-
-  const start = async () => {
-    setStarting(true);
-    setResults(null);
-    try { setLogin(await request(`/accounts/${account.id}/xhs-login`, { method: "POST" })); }
-    catch (caught) { onError(caught.message); }
-    finally { setStarting(false); }
-  };
 
   const test = async () => {
     setTesting(true);
     setResults(null);
     try {
       setResults(await request(`/accounts/${account.id}/test-pipeline`, { method: "POST" }));
-      await onConnected();
     } catch (caught) {
       onError(caught.message);
     } finally {
@@ -553,13 +512,9 @@ function XhsAccountActions({ account, onError, onConnected }) {
     }
   };
 
-  const waiting = login?.status === "WAITING_SCAN";
   return <section className="xhs-account-actions" aria-label={`${account.displayName} 小红书连接与测试`}>
-    <header><div><h4>连接与链路测试</h4><p>{account.sessionConfigured ? `会话已配置${account.lastConnectedAt ? ` · ${formatTime(account.lastConnectedAt)}` : ""}` : "扫码后才能执行真实发布链路"}</p></div><StatusBadge value={account.sessionConfigured ? "READY" : "NOT_CONFIGURED"} /></header>
-    <div className="ops-action-row"><button type="button" onClick={start} disabled={starting || waiting}>{starting ? "正在打开扫码页…" : waiting ? "等待扫码确认…" : account.sessionConfigured ? "重新扫码登录" : "扫码登录小红书"}</button><button type="button" className="primary" onClick={test} disabled={testing || !account.sessionConfigured}>{testing ? "拉取、判断并发布中…" : "一键测试小红书"}</button></div>
-    {login?.qrImageDataUrl && waiting && <div className="xhs-qr"><img src={login.qrImageDataUrl} alt="小红书登录二维码" /><span>{login.message || "请用小红书 App 扫码并在手机上确认"}</span></div>}
-    {login?.status === "CONNECTED" && <p className="xhs-success">扫码登录成功，会话已加密保存。</p>}
-    {login?.status === "EXPIRED" && <p className="xhs-expired">{login.message || "扫码会话已过期，请重新发起。"}</p>}
+    <header><div><h4>账号绑定与链路测试</h4><p>{account.sessionConfigured ? `已绑定账号中心${account.lastConnectedAt ? ` · ${formatTime(account.lastConnectedAt)}` : ""}` : "请先在账号中心完成登录"}</p></div><StatusBadge value={account.sessionConfigured ? "READY" : "NOT_CONFIGURED"} /></header>
+    <div className="ops-action-row"><a href="/accounts">前往账号中心</a><button type="button" className="primary" onClick={test} disabled={testing || !account.sessionConfigured}>{testing ? "拉取、判断并发布中…" : "一键测试小红书"}</button></div>
     {results && <div className="pipeline-test-results">{results.map((result) => <article key={`${result.sourceId}-${result.contentItemId || "none"}`}><b>{({ FILTERED: "已过滤", ALREADY_EXISTS: "已去重", PUBLISHED: "已发布", UNCERTAIN: "待确认", NO_CONTENT: "无内容" })[result.result] || result.result}</b><span>{result.message}</span>{result.draft && <small>{result.draft.title}</small>}</article>)}</div>}
   </section>;
 }
@@ -650,7 +605,6 @@ function AutomationRuns({ runs }) {
 function GeminiSettings({ onError, onNotice }) {
   const [config, setConfig] = useState(null);
   const [testing, setTesting] = useState(false);
-  const [showKey, setShowKey] = useState(false);
 
   useEffect(() => { request("/ai-config").then(setConfig).catch((caught) => onError(caught.message)); }, [onError]);
   if (!config) return <section className="content-ops-panel">正在读取 Gemini 配置…</section>;
@@ -664,7 +618,6 @@ function GeminiSettings({ onError, onNotice }) {
     values.maxOutputTokens = Number(values.maxOutputTokens);
     try {
       setConfig(await request("/ai-config", { method: "PUT", body: JSON.stringify(values) }));
-      form.elements.apiKey.value = "";
       onNotice("Gemini 配置已保存");
     } catch (caught) {
       onError(caught.message);
@@ -684,12 +637,12 @@ function GeminiSettings({ onError, onNotice }) {
   };
 
   return <form className="content-ops-panel gemini-form" onSubmit={submit}>
-    <SectionHeading eyebrow="GEMINI PROVIDER" title="Gemini 内容生成" description="相关性判断、内容改写和评论回复共用此配置" actions={<span className={`gemini-key ${config.apiKeyConfigured ? "ready" : ""}`}>{config.apiKeyConfigured ? `密钥已配置 ${config.apiKeyHint || ""}` : "密钥未配置"}</span>} />
+    <SectionHeading eyebrow="GEMINI PROVIDER" title="Gemini 内容生成" description="相关性判断、内容改写和评论回复共用此配置" actions={<a href="/accounts">前往账号中心</a>} />
     <label className="gemini-enable native-switch"><input name="enabled" type="checkbox" defaultChecked={config.enabled} /><span><b>启用 Gemini</b><small>关闭后不会执行判断和生成</small></span></label>
     <div className="gemini-layout">
       <fieldset className="gemini-section"><legend>连接与参数</legend>
         <div className="gemini-provider-grid">
-          <label className="gemini-api-key">API Key<span className="secret-input"><input name="apiKey" type={showKey ? "text" : "password"} autoComplete="new-password" placeholder={config.apiKeyConfigured ? "留空则保留现有密钥" : "输入 Gemini API Key"} /><button type="button" onClick={() => setShowKey((value) => !value)}>{showKey ? "隐藏" : "显示"}</button></span><small>后端加密保存，页面不会读取现有明文</small></label>
+          <p className="gemini-account-reference">{config.apiKeyConfigured ? "已绑定账号中心 Gemini 服务" : "尚未绑定 Gemini 服务，请先前往账号中心配置"}</p>
           <label>模型<input name="model" required defaultValue={config.model} /></label>
           <label>API 地址<input name="apiBaseUrl" type="url" required defaultValue={config.apiBaseUrl} /></label>
           <div className="gemini-parameter-grid">
@@ -722,19 +675,13 @@ function SourcePreview({ result, onClassify }) {
 }
 
 function EntityDialog({ descriptor, collectionAccounts, onSubmit, onClose }) {
-  const kind = typeof descriptor === "string" ? descriptor : descriptor.kind;
   const item = typeof descriptor === "string" ? null : descriptor.item;
-  const title = `${item ? "编辑" : "添加"}${kind === "account" ? "小红书账号" : kind === "collector" ? " X 采集账号" : "内容来源"}`;
+  const title = `${item ? "编辑" : "添加"}内容来源`;
   return <div className="content-ops-dialog-backdrop">
     <form className="content-ops-dialog" role="dialog" aria-modal="true" aria-labelledby="content-ops-dialog-title" onSubmit={(event) => onSubmit(event, descriptor)}>
       <header><div><span className="ops-eyebrow">CONFIGURATION</span><h3 id="content-ops-dialog-title">{title}</h3></div><button type="button" autoFocus onClick={onClose} aria-label="关闭"><X /></button></header>
       <div className="ops-dialog-fields">
-        {kind === "account" ? <>
-          <label>显示名称<input name="displayName" required maxLength="100" defaultValue={item?.displayName || ""} /></label>
-          <label>账号标识<input name="accountHandle" maxLength="120" defaultValue={item?.accountHandle || ""} /></label>
-          <label>发布模式<select name="publishMode" defaultValue={item?.publishMode || "AUTO"}><option value="AUTO">全自动</option><option value="MANUAL">手动确认</option></select></label>
-          {item && <label className="native-switch ops-switch"><input name="enabled" type="checkbox" defaultChecked={item.enabled} /><span>启用账号</span></label>}
-        </> : kind === "collector" ? <CollectionAccountFormFields item={item} /> : <SourceFormFields collectionAccounts={collectionAccounts} item={item} />}
+        <SourceFormFields collectionAccounts={collectionAccounts} item={item} />
       </div>
       <footer><button type="button" onClick={onClose}>取消</button><button type="submit">保存配置</button></footer>
     </form>
@@ -798,20 +745,6 @@ function SourceFormFields({ collectionAccounts, item }) {
     {adapter === "TWITTER_API" ? <label>Twitter UID<input name="externalUid" required inputMode="numeric" pattern="[0-9]+" maxLength="30" placeholder="数字用户 ID" defaultValue={item?.externalUid || ""} /></label> : <label>Twitter 用户名<input aria-label="Twitter 用户名" name="externalHandle" required pattern="@?[A-Za-z0-9_]{1,15}" maxLength="16" placeholder="例如：elonmusk" defaultValue={item?.externalHandle || ""} /><small>可填写 elonmusk 或 @elonmusk。</small></label>}
     {item && <label className="native-switch ops-switch"><input name="enabled" type="checkbox" defaultChecked={item.enabled} /><span>启用内容源</span></label>}
     <small>采集周期使用“自动化设置”中的全局周期。</small>
-  </>;
-}
-
-function CollectionAccountFormFields({ item }) {
-  const [adapter, setAdapter] = useState(item?.adapterType || "TWITTER_WEB");
-  return <>
-    <label>账号名称<input name="displayName" required maxLength="100" placeholder="例如：我的 X 采集账号" defaultValue={item?.displayName || ""} /></label>
-    {item ? <>
-      <label className="native-switch ops-switch"><input name="enabled" type="checkbox" defaultChecked={item.enabled} /><span>启用采集账号</span></label>
-      {adapter === "TWITTER_WEB" ? <label>更新 X Cookie<textarea aria-label="更新 X Cookie" name="accessToken" maxLength="20000" spellCheck="false" placeholder="留空则保留现有 Cookie" /><small>Cookie 失效时在这里替换；留空不会清除现有凭据。</small></label> : <label>更新 Bearer Token<input aria-label="更新 Bearer Token" name="accessToken" type="password" autoComplete="new-password" placeholder="留空则保留现有 Token" /></label>}
-    </> : <>
-      <label>采集方式<select aria-label="采集方式" name="adapterType" value={adapter} onChange={(event) => setAdapter(event.target.value)}><option value="TWITTER_WEB">X 登录 Cookie（免 API Key）</option><option value="TWITTER_API">官方 API Bearer</option></select></label>
-      {adapter === "TWITTER_WEB" ? <label>X Cookie<textarea aria-label="X Cookie" name="accessToken" required maxLength="20000" spellCheck="false" placeholder="# Netscape HTTP Cookie File&#10;.x.com  TRUE  /  TRUE  ...  auth_token  ...&#10;.x.com  TRUE  /  TRUE  ...  ct0  ..." /><small>完整 Cookie 只配置一次，之后内容源直接绑定此账号。</small></label> : <label>Bearer Token<input aria-label="Bearer Token" name="accessToken" type="password" required autoComplete="new-password" /><small>保存后可供多个内容源复用。</small></label>}
-    </>}
   </>;
 }
 
