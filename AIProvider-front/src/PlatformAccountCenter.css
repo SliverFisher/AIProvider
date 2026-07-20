@@ -7,8 +7,8 @@
 .account-sections{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
 .usage-section{grid-column:1/-1}
 .account-section{padding:18px}
-.account-card-list{gap:12px;margin-top:14px}
-.account-card{display:grid;gap:12px;min-height:245px;padding:18px;background:linear-gradient(150deg,var(--bg-surface),var(--bg-card))}
+.account-card-list{grid-template-columns:1fr 1fr;gap:10px;margin-top:14px}
+.account-card{display:grid;gap:8px;min-height:180px;padding:14px;background:linear-gradient(150deg,var(--bg-surface),var(--bg-card))}
 .account-card>header{align-items:flex-start}
 .account-card-brand{display:flex;align-items:center;gap:11px;min-width:0}
 .account-card-brand>div{display:grid;gap:2px}
@@ -18,8 +18,8 @@
 .brand-x{fill:var(--text-primary)}
 .brand-xiaohongshu{fill:#ff2442}
 .brand-douyin .douyin-cyan{fill:#25f4ee}.brand-douyin .douyin-pink{fill:#fe2c55}.brand-douyin .douyin-core{fill:var(--text-primary)}
-.account-card h4{margin-top:1px;font-size:17px}
-.account-card dl{margin:0;padding:11px 0;border-top:1px solid var(--border-subtle);border-bottom:1px solid var(--border-subtle)}
+.account-card h4{margin-top:1px;font-size:14px}
+.account-card dl{margin:0;padding:7px 0;border-top:1px solid var(--border-subtle);border-bottom:1px solid var(--border-subtle)}
 .account-card-actions{align-self:end}
 .account-card-actions button{display:flex;align-items:center;justify-content:center;gap:5px}
 .account-card button:disabled{cursor:not-allowed;opacity:.48}
