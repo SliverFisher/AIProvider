@@ -5,6 +5,11 @@ import com.fasterxml.jackson.databind.JsonNode;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.LocalTime;
+import java.time.OffsetDateTime;
+import java.time.format.DateTimeParseException;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
@@ -38,7 +43,7 @@ public class SyncRepository {
         payload.fields().forEachRemaining(entry -> {
             String actual = metadata.columnsByLowerCase().get(entry.getKey().toLowerCase(Locale.ROOT));
             if (actual != null)
-                values.put(actual, jdbcValue(entry.getValue(), metadata.binaryColumns().contains(actual)));
+                values.put(actual, jdbcValue(entry.getValue(), metadata.binaryColumns().contains(actual), metadata.dataTypes().get(actual)));
         });
 
         if (metadata.columnsByLowerCase().containsKey("userid"))
@@ -70,6 +75,7 @@ public class SyncRepository {
         Map<String, String> columns = new LinkedHashMap<>();
         List<String> primary = new ArrayList<>();
         Set<String> binary = new HashSet<>();
+        Map<String, String> dataTypes = new HashMap<>();
 
         for (Map<String, Object> row : rows) {
             String name = String.valueOf(row.get("COLUMN_NAME"));
@@ -77,23 +83,36 @@ public class SyncRepository {
             if ("PRI".equals(String.valueOf(row.get("COLUMN_KEY"))))
                 primary.add(name);
             String type = String.valueOf(row.get("DATA_TYPE")).toLowerCase(Locale.ROOT);
+            dataTypes.put(name, type);
             if (type.contains("blob") || type.contains("binary"))
                 binary.add(name);
         }
 
         if (primary.isEmpty())
             throw new IllegalStateException(table + " 没有主键");
-        return new TableMetadata(columns, primary, binary);
+        return new TableMetadata(columns, primary, binary, dataTypes);
     }
 
-    private static Object jdbcValue(JsonNode node, boolean binary) {
+    private static Object jdbcValue(JsonNode node, boolean binary, String dataType) {
         if (node == null || node.isNull()) return null;
         if (binary && node.isTextual()) return Base64.getDecoder().decode(node.asText());
+        if (node.isTextual() && ("datetime".equals(dataType) || "timestamp".equals(dataType)))
+            return localDateTime(node.asText());
+        if (node.isTextual() && "date".equals(dataType)) return LocalDate.parse(node.asText());
+        if (node.isTextual() && "time".equals(dataType)) return LocalTime.parse(node.asText());
         if (node.isBoolean()) return node.booleanValue();
         if (node.isIntegralNumber()) return node.longValue();
         if (node.isFloatingPointNumber()) return node.decimalValue();
         if (node.isBinary()) try { return node.binaryValue(); } catch (Exception ignored) {}
         return node.asText();
+    }
+
+    private static LocalDateTime localDateTime(String value) {
+        try {
+            return OffsetDateTime.parse(value).toLocalDateTime();
+        } catch (DateTimeParseException ignored) {
+            return LocalDateTime.parse(value.replace(' ', 'T'));
+        }
     }
 
     private static String quote(String name) {
@@ -104,15 +123,19 @@ public class SyncRepository {
         private final Map<String, String> columnsByLowerCase;
         private final List<String> primaryKeys;
         private final Set<String> binaryColumns;
+        private final Map<String, String> dataTypes;
 
-        TableMetadata(Map<String, String> columnsByLowerCase, List<String> primaryKeys, Set<String> binaryColumns) {
+        TableMetadata(Map<String, String> columnsByLowerCase, List<String> primaryKeys, Set<String> binaryColumns,
+                      Map<String, String> dataTypes) {
             this.columnsByLowerCase = columnsByLowerCase;
             this.primaryKeys = primaryKeys;
             this.binaryColumns = binaryColumns;
+            this.dataTypes = dataTypes;
         }
 
         Map<String, String> columnsByLowerCase() { return columnsByLowerCase; }
         List<String> primaryKeys() { return primaryKeys; }
         Set<String> binaryColumns() { return binaryColumns; }
+        Map<String, String> dataTypes() { return dataTypes; }
     }
 }
