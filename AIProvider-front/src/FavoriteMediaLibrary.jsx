@@ -278,9 +278,9 @@ export default function FavoriteMediaLibrary() {
       <div className="favorite-toolbar-actions">
         {selectionMode ? <>
           <button type="button" onClick={toggleAll}><CheckCircle />{allSelected ? "取消全选" : "全选"}</button>
-          <button type="button" className="danger" disabled={!selected.size} onClick={() => setDeleteIds([...selected])}><Trash />移除 {selected.size || ""}</button>
+          <button type="button" className="danger" disabled={!selected.size} onClick={() => setDeleteIds([...selected])}><Trash />删除已选 {selected.size || ""}</button>
           <button type="button" onClick={() => { setSelectionMode(false); setSelected(new Set()); }}><X />完成</button>
-        </> : <button type="button" onClick={() => setSelectionMode(true)}><CheckCircle />选择</button>}
+        </> : <button type="button" className="danger" onClick={() => setSelectionMode(true)}><Trash />批量删除</button>}
         <button type="button" onClick={load} disabled={state === "loading"}><ArrowClockwise />刷新</button>
         <button type="button" className="primary" onClick={() => inputRef.current?.click()} disabled={uploading.active}><UploadSimple />{uploading.active ? `${uploading.done}/${uploading.total}` : "上传"}</button>
         <input ref={inputRef} className="favorite-file-input" type="file" accept={ACCEPT_ATTR} multiple onChange={(event) => uploadFiles(event.target.files)} />
@@ -298,6 +298,7 @@ export default function FavoriteMediaLibrary() {
         : <div className="favorite-grid">{filtered.map((item, index) => <article className="favorite-card" key={item.id} data-selected={selected.has(item.id)}>
           <button type="button" className="favorite-image" aria-label={`预览 ${item.title}`} onClick={() => selectionMode ? toggle(item.id) : openPreview(index)} onContextMenu={(event) => { event.preventDefault(); setMenu({ item, x: Math.min(event.clientX, window.innerWidth - 210), y: Math.min(event.clientY, window.innerHeight - 150) }); }}>{isVideoItem(item) ? <><img src={item.thumbnailUrl || item.contentUrl} alt="" loading="lazy" /><span className="favorite-video-badge"><Play weight="fill" /></span></> : <img src={item.thumbnailUrl || item.contentUrl} alt="" loading="lazy" />}</button>
           <button type="button" className="favorite-select" aria-label={`${selected.has(item.id) ? "取消选择" : "选择"} ${item.title}`} onClick={() => { setSelectionMode(true); toggle(item.id); }}><i>{selected.has(item.id) ? "✓" : ""}</i></button>
+          <button type="button" className="favorite-delete" aria-label={`删除 ${item.title}`} onClick={() => setDeleteIds([item.id])}><Trash /></button>
           <button type="button" className="favorite-more" aria-label={`${item.title} 更多操作`} onClick={(event) => { event.stopPropagation(); const box = event.currentTarget.getBoundingClientRect(); setMenu({ item, x: Math.min(box.right - 190, window.innerWidth - 210), y: Math.min(box.bottom + 6, window.innerHeight - 150) }); }}><DotsThree weight="bold" /></button>
           <div className="favorite-card-meta"><strong>{item.title}</strong><span>{formatDate(item.createdAt)} · {formatSize(item.fileSize)}</span></div>
         </article>)}</div>}
@@ -386,7 +387,7 @@ export default function FavoriteMediaLibrary() {
       </div>
     </div>}
     {!!pendingDropFiles.length && <div className="favorite-confirm" role="dialog" aria-modal="true" aria-label="确认拖放上传"><div><UploadSimple /><h3>上传这些媒体？</h3><p>即将把 {pendingDropFiles.length} 个图片或视频复制到服务器“我的最爱”。</p><span className="favorite-drop-files">{pendingDropFiles.slice(0, 4).map((file) => file.name).join("、")}{pendingDropFiles.length > 4 ? ` 等 ${pendingDropFiles.length} 个文件` : ""}</span><footer><button type="button" onClick={() => setPendingDropFiles([])}>取消</button><button type="button" className="primary" onClick={() => { const files = pendingDropFiles; setPendingDropFiles([]); uploadFiles(files); }}>确认上传</button></footer></div></div>}
-    {!!deleteIds.length && <div className="favorite-confirm" role="dialog" aria-modal="true" aria-label="确认移除"><div><Star weight="fill" /><h3>从我的最爱移除？</h3><p>将同时删除服务器上的 {deleteIds.length} 个原图文件，此操作不可恢复。</p><footer><button type="button" onClick={() => setDeleteIds([])}>取消</button><button type="button" className="danger" onClick={remove}>确认移除</button></footer></div></div>}
+    {!!deleteIds.length && <div className="favorite-confirm" role="dialog" aria-modal="true" aria-label="确认删除"><div><Trash /><h3>删除选中的媒体？</h3><p>将按 ID 删除服务器上的 {deleteIds.length} 个原图及其记录，此操作不可恢复。</p><footer><button type="button" onClick={() => setDeleteIds([])}>取消</button><button type="button" className="danger" onClick={remove}>确认删除</button></footer></div></div>}
     {wallpaper.open && <div className="favorite-confirm wallpaper-dialog" role="dialog" aria-modal="true" aria-label="选择壁纸显示器"><div>
       <Desktop /><h3>应用到哪一台显示器？</h3><p>默认会判断图片与屏幕方向，只替换所选屏幕。</p>
       {wallpaper.loading && !wallpaper.monitors.length ? <span className="wallpaper-loading">正在读取本机显示器…</span> : <>

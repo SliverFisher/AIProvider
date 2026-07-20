@@ -16,6 +16,33 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 describe("FavoriteMediaLibrary", () => {
+  it("deletes one or multiple favorites by their IDs", async () => {
+    const items = [item, { ...item, id: 8, title: "晨雾" }, { ...item, id: 9, title: "晚霞" }];
+    const deleteBodies = [];
+    vi.spyOn(globalThis, "fetch").mockImplementation((url, options = {}) => {
+      if (url === "/api/favorites?page=1&pageSize=100") return jsonResponse({ code: 200, data: { items, total: items.length } });
+      if (url === "/api/favorites" && options.method === "DELETE") {
+        deleteBodies.push(JSON.parse(options.body));
+        return jsonResponse({ code: 200, data: { deleted: deleteBodies.at(-1).ids.length } });
+      }
+      throw new Error(`unexpected request: ${url}`);
+    });
+    render(<FavoriteMediaLibrary />);
+    await screen.findByText("星夜海岸");
+
+    fireEvent.click(screen.getByRole("button", { name: "删除 星夜海岸" }));
+    expect(screen.getByRole("dialog", { name: "确认删除" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "确认删除" }));
+    await waitFor(() => expect(deleteBodies).toEqual([{ ids: [7] }]));
+
+    fireEvent.click(screen.getByRole("button", { name: "批量删除" }));
+    fireEvent.click(screen.getByRole("button", { name: "选择 晨雾" }));
+    fireEvent.click(screen.getByRole("button", { name: "选择 晚霞" }));
+    fireEvent.click(screen.getByRole("button", { name: "删除已选 2" }));
+    fireEvent.click(screen.getByRole("button", { name: "确认删除" }));
+    await waitFor(() => expect(deleteBodies).toEqual([{ ids: [7] }, { ids: [8, 9] }]));
+  });
+
   it("uploads image files dropped anywhere on the page", async () => {
     const uploaded = { ...item, id: 8, title: "拖入图片" };
     vi.spyOn(globalThis, "fetch").mockImplementation((url) => {
