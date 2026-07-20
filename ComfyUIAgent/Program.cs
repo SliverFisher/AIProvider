@@ -693,11 +693,8 @@ async Task<GenerationPreparation> PrepareGeneration(IFormCollection form, IHttpC
     var output = bindings["outputNode"] as JsonObject ?? throw new InvalidOperationException("工作流绑定缺少 outputNode");
     var outputId = output["nodeId"]?.GetValue<string>();
     var outputTitle = output["title"]?.GetValue<string>() ?? "最终输出";
-    var finalEntry = outputId != null && prompt[outputId]?["class_type"]?.GetValue<string>() == "SaveImage"
-        ? new KeyValuePair<string, JsonNode?>(outputId, prompt[outputId])
-        : prompt.FirstOrDefault(x => x.Value?["_meta"]?["title"]?.GetValue<string>() == outputTitle && x.Value?["class_type"]?.GetValue<string>() == "SaveImage");
-    if (finalEntry.Value == null) throw new InvalidOperationException("找不到标题为“最终输出”的 SaveImage 节点");
-    var finalId = finalEntry.Key;
+    var finalId = WorkflowOutputBinding.FindOutputNodeId(prompt, outputId, outputTitle)
+        ?? throw new InvalidOperationException($"找不到标题为“{outputTitle}”的 SaveImage 或 SaveVideo 节点");
     var promptId = Guid.NewGuid().ToString("D");
     var returnedSeed = actualSeed is JsonValue returnedSeedValue && returnedSeedValue.TryGetValue<long>(out var parsedSeed) ? parsedSeed : (long?)null;
     var queueItem = new BridgeQueuedGeneration {
@@ -1578,8 +1575,7 @@ JsonObject BuildLocalWorkflow(string relative, DateTime modifiedAtUtc, JsonObjec
         if (secondPass.Value.Value["inputs"]?["seed"] != null) Bind("secondPassSeed", secondPass, "seed");
     }
 
-    var output = Find(node => node["class_type"]?.GetValue<string>() == "SaveImage" && TitleHas(node, "最终", "final"))
-        ?? Find(node => node["class_type"]?.GetValue<string>() == "SaveImage");
+    var output = WorkflowOutputBinding.FindPrimaryOutput(entries);
     var transparentOutput = Find(node => node["class_type"]?.GetValue<string>() == "SaveImage" && TitleHas(node, "透明", "transparent", "抠图"));
     Bind("filenamePrefix", output, "filename_prefix");
 
