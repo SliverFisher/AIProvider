@@ -8,6 +8,7 @@ const item = { id: 7, title: "星夜海岸", originalFileName: "coast.png", medi
 const jsonResponse = (data) => Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(data) });
 
 beforeEach(() => {
+  vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} });
   vi.stubGlobal("createImageBitmap", vi.fn().mockResolvedValue({ width: 1920, height: 1080, close: vi.fn() }));
   vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({ fillStyle: "", filter: "", fillRect: vi.fn(), drawImage: vi.fn(), save: vi.fn(), restore: vi.fn() });
   vi.spyOn(HTMLCanvasElement.prototype, "toBlob").mockImplementation((callback) => callback(new Blob(["wallpaper"], { type: "image/png" })));
@@ -96,6 +97,27 @@ describe("FavoriteMediaLibrary", () => {
     expect(screen.getByText("没有找到匹配的媒体")).toBeTruthy();
     fireEvent.change(search, { target: { value: "海岸" } });
     expect(screen.getByText("星夜海岸")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "预览 星夜海岸" }));
+    expect(screen.getByRole("dialog", { name: "预览 星夜海岸" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "缩小图片" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "关闭预览" }));
+  });
+
+  it("filters by media type and offers the original file in the context menu", async () => {
+    const video = { ...item, id: 8, title: "海岸视频", originalFileName: "coast.mp4", mediaType: "video", contentType: "video/mp4", contentUrl: "/api/favorites/8/content" };
+    vi.spyOn(globalThis, "fetch").mockImplementation((url) => {
+      if (url === "/api/favorites?page=1&pageSize=100") return jsonResponse({ code: 200, data: { items: [item, video], total: 2 } });
+      throw new Error(`unexpected request: ${url}`);
+    });
+    render(<FavoriteMediaLibrary />);
+    await screen.findByText("星夜海岸");
+    fireEvent.change(screen.getByRole("combobox", { name: "按内容类型筛选" }), { target: { value: "video" } });
+    expect(screen.queryByText("星夜海岸")).toBeNull();
+    const preview = screen.getByRole("button", { name: "预览 海岸视频" });
+    fireEvent.contextMenu(preview, { clientX: 200, clientY: 200 });
+    const download = screen.getByRole("link", { name: "另存为下载" });
+    expect(download.getAttribute("href")).toBe("/api/favorites/8/content");
+    expect(download.getAttribute("download")).toBe("coast.mp4");
   });
 
   it("offers every detected display and uploads a monitor-sized smart wallpaper to the Bridge", async () => {

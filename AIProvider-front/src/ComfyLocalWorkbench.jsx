@@ -2,16 +2,10 @@ import { memo, startTransition, useCallback, useEffect, useMemo, useRef, useStat
 import {
   CheckCircle,
   Copy,
-  CaretLeft,
-  CaretRight,
-  ArrowCounterClockwise,
   ArrowClockwise,
-  ArrowsLeftRight,
   ImageSquare,
   Info,
   FolderOpen,
-  MagnifyingGlassMinus,
-  MagnifyingGlassPlus,
   Play,
   PaperPlaneTilt,
   Power,
@@ -22,8 +16,8 @@ import {
   Warning,
   X,
 } from "@phosphor-icons/react";
-import { TransformComponent, TransformWrapper } from "react-zoom-pan-pinch";
 import "./ComfyLocalWorkbench.css";
+import MediaViewer from "./MediaViewer";
 import WorkflowPanel from "./WorkflowPanel";
 import { generateId } from "./utils/generateId";
 import { applySchemeToWorkflow, createComfyProgressPlan, createWorkflowForm, describeComfyProgress, FALLBACK_FORM, findFinalOutput, getWorkflowFieldKeys, getWorkflowRevision, hasPromptSchemeContent, refreshWorkflowForm } from "./comfy/workbench";
@@ -33,7 +27,6 @@ import { buildLuckyPrompts } from "./luckyPrompt";
 const BRIDGE = "http://127.0.0.1:32145";
 const BRIDGE_LAUNCH_URL = "aiprovider-bridge://start";
 const initial = FALLBACK_FORM;
-const VIEWER_ZOOM_STEP = 0.2;
 const taskStateRank = { RUNNING: 0, CANCEL_REQUESTED: 1, QUEUED: 2, FAILED: 3 };
 function PromptViewToggle({ value, onChange }) {
   return <div className="prompt-view-toggle" aria-label="Prompt 显示方式">
@@ -385,7 +378,6 @@ export default function ComfyLocalWorkbench({ mode = "workbench", active = true 
   const [infoDetail, setInfoDetail] = useState(null);
   const [detailPromptView, setDetailPromptView] = useState("zh");
   const [detailPromptTranslation, setDetailPromptTranslation] = useState({ key: "", positivePrompt: "", negativePrompt: "", loading: false, error: "" });
-  const [viewerOrientation, setViewerOrientation] = useState({ rotation: 0, mirrored: false });
   const [imageMenu, setImageMenu] = useState(null);
   const [deleteConfirm, setDeleteConfirm] = useState(null);
   const [selectionMode, setSelectionMode] = useState(false);
@@ -443,7 +435,6 @@ export default function ComfyLocalWorkbench({ mode = "workbench", active = true 
     defaultPresetApplied = useRef(""),
     promptAnalysisVersion = useRef(0),
     cancelAllRequested = useRef(false),
-    viewerTransform = useRef(null),
     galleryTileActionsRef = useRef(null),
     viewerActionsRef = useRef({ requestDelete: null, route: null });
   gallerySourcesRef.current = gallerySources;
@@ -465,9 +456,6 @@ export default function ComfyLocalWorkbench({ mode = "workbench", active = true 
     window.addEventListener("scroll", close, true);
     return () => { window.removeEventListener("click", close); window.removeEventListener("scroll", close, true); };
   }, [imageMenu]);
-  useEffect(() => {
-    setViewerOrientation({ rotation: 0, mirrored: false });
-  }, [detail?.index]);
   useEffect(() => {
     if (detailPromptView !== "zh" || (!taskDetail && !infoDetail)) return undefined;
     const positivePrompt = String(taskDetail?.form?.positivePrompt ?? infoDetail?.item?.prompt ?? "");
@@ -3251,77 +3239,26 @@ export default function ComfyLocalWorkbench({ mode = "workbench", active = true 
           <footer><button onClick={() => openImageFolder(infoDetail.item, infoDetail.image).catch((e) => setError(e.message))}><FolderOpen />打开所在文件夹</button><button onClick={() => setInfoDetail(null)}>关闭</button></footer>
         </div>
       </div>}
-      {detail && (
-        <div
-          className="history-modal"
-          onMouseDown={(e) => e.target === e.currentTarget && closeDetail()}
-        >
-          <div className="history-modal-panel">
-            <header className="viewer-header">
-              <div className="viewer-header-tools">
-                <button onClick={() => viewerTransform.current?.zoomOut(VIEWER_ZOOM_STEP, 120, "easeOut")} title="缩小"><MagnifyingGlassMinus /></button>
-                <button onClick={() => viewerTransform.current?.resetTransform(140, "easeOut")} title="恢复原位"><ArrowCounterClockwise /></button>
-                <button onClick={() => viewerTransform.current?.zoomIn(VIEWER_ZOOM_STEP, 120, "easeOut")} title="放大"><MagnifyingGlassPlus /></button>
-                <button type="button" onClick={() => setViewerOrientation((current) => ({ ...current, rotation: (current.rotation + 90) % 360 }))} title="顺时针旋转 90°" aria-label="顺时针旋转图片 90 度"><ArrowClockwise /></button>
-                <button type="button" aria-pressed={viewerOrientation.mirrored} onClick={() => setViewerOrientation((current) => ({ ...current, mirrored: !current.mirrored }))} title="水平镜像" aria-label="水平镜像图片"><ArrowsLeftRight /></button>
-                <small>每次 20% · 滚轮同档</small>
-              </div>
-              <div className="viewer-file-title" title={detail.images[detail.index].filename || detail.images[detail.index].path || "图片"}>
-                <strong>{detail.images[detail.index].filename || detail.images[detail.index].path?.split(/[\\/]/).pop() || "图片"}</strong>
-                <span>{detail.index + 1} / {detail.images.length}</span>
-                <small>
-                  完成 {detail.images[detail.index].task.generationCompletedAt
-                    ? new Date(detail.images[detail.index].task.generationCompletedAt).toLocaleString("zh-CN", { hour12: false })
-                    : "未记录"}
-                  {" · "}生成 {formatGenerationDuration(detail.images[detail.index].task.generationDurationMs)}
-                </small>
-              </div>
-              <div className="viewer-header-actions">
-                <button onClick={() => copyGalleryImage(detail.images[detail.index])} title="复制图片" aria-label="复制当前图片"><Copy /></button>
-                <button onClick={() => openImageInfo(detail.images[detail.index].task, detail.images[detail.index])} title="查看详细信息"><Info /></button>
-                <button onClick={closeDetail} title="关闭大图"><X /></button>
-              </div>
-            </header>
-            <div className="history-lightbox" onContextMenu={(event) => {
-              event.preventDefault();
-              const image = detail.images[detail.index];
-              setImageMenu({ x: Math.min(event.clientX, window.innerWidth - 190), y: Math.min(event.clientY, window.innerHeight - 320), item: image.task, image, viewer: true });
-            }}>
-              <TransformWrapper
-                ref={viewerTransform}
-                initialScale={1}
-                minScale={1}
-                maxScale={8}
-                centerOnInit
-                centerZoomedOut
-                limitToBounds
-                disablePadding
-                smooth={false}
-                wheel={{ step: VIEWER_ZOOM_STEP }}
-                doubleClick={{ mode: "toggle", step: 1, animationTime: 180, animationType: "easeOut" }}
-                zoomAnimation={{ animationTime: 160, animationType: "easeOut" }}
-                autoAlignment={{ animationTime: 140, velocityAlignmentTime: 220, animationType: "easeOut" }}
-                panning={{ velocityDisabled: false }}
-              >
-                {() => (
-                  <>
-                    <TransformComponent wrapperClass="zoom-viewer" contentClass="zoom-content">
-                      <img
-                        className={`viewer-oriented-image ${viewerOrientation.rotation % 180 ? "is-quarter-turn" : ""}`}
-                        style={{ transform: `rotate(${viewerOrientation.rotation}deg) scaleX(${viewerOrientation.mirrored ? -1 : 1})` }}
-                        src={detail.images[detail.index].url}
-                        alt="历史生成结果"
-                      />
-                    </TransformComponent>
-                    <button className="lightbox-nav prev" aria-label="上一张图片" onClick={() => navigateDetail(-1)}><CaretLeft /></button>
-                    <button className="lightbox-nav next" aria-label="下一张图片" onClick={() => navigateDetail(1)}><CaretRight /></button>
-                  </>
-                )}
-              </TransformWrapper>
-            </div>
-          </div>
-        </div>
-      )}
+      {detail && (() => {
+        const image = detail.images[detail.index];
+        const title = image.filename || image.path?.split(/[\\/]/).pop() || "图片";
+        const subtitle = `完成 ${image.task.generationCompletedAt ? new Date(image.task.generationCompletedAt).toLocaleString("zh-CN", { hour12: false }) : "未记录"} · 生成 ${formatGenerationDuration(image.task.generationDurationMs)}`;
+        return <MediaViewer
+          title={title}
+          subtitle={subtitle}
+          index={detail.index}
+          total={detail.images.length}
+          src={image.url}
+          alt="历史生成结果"
+          onClose={closeDetail}
+          onNavigate={navigateDetail}
+          onContextMenu={(event) => {
+            event.preventDefault();
+            setImageMenu({ x: Math.min(event.clientX, window.innerWidth - 190), y: Math.min(event.clientY, window.innerHeight - 320), item: image.task, image, viewer: true });
+          }}
+          actions={<><button type="button" onClick={() => copyGalleryImage(image)} title="复制图片" aria-label="复制当前图片"><Copy /></button><button type="button" onClick={() => openImageInfo(image.task, image)} title="查看详细信息" aria-label="查看图片详细信息"><Info /></button></>}
+        />;
+      })()}
     </div>
   );
 }

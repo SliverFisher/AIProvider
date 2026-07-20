@@ -72,9 +72,26 @@ describe("UI release gate", () => {
     expect(page).toContain('<progress max=');
     expect(page).toContain('body: JSON.stringify({ ids: deleteIds })');
     expect(page).toContain('<Trash />批量删除');
+    expect(page).toContain('aria-label="按内容类型筛选"');
+    expect(page).toContain('download={mediaFileName(menu.item)}');
     expect(page).not.toMatch(/<div[^>]+onClick=/);
     expect(css).toContain("var(--bg-surface)");
     expect(css).toContain("var(--text-primary)");
+  });
+
+  it("keeps Workshop and My Favorites on one compact shared media viewer", () => {
+    const workshop = read("ComfyLocalWorkbench.jsx");
+    const favorites = read("FavoriteMediaLibrary.jsx");
+    const viewer = read("MediaViewer.jsx");
+    const viewerCss = read("MediaViewer.css");
+    expect(workshop).toContain('import MediaViewer from "./MediaViewer"');
+    expect(favorites).toContain('import MediaViewer from "./MediaViewer"');
+    expect(workshop).toContain("<MediaViewer");
+    expect(favorites).toContain("<MediaViewer");
+    expect(viewer).toContain("<TransformWrapper");
+    expect(viewerCss).toMatch(/\.media-viewer-panel\{[^}]*grid-template-rows:24px minmax\(0,1fr\) auto/);
+    expect(viewerCss).toContain("var(--bg-surface)");
+    expect(viewerCss).toContain("var(--text-primary)");
   });
 
   it("keeps file transfer reachable, semantic, and horizontally contained", () => {

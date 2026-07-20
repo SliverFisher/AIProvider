@@ -1,12 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowClockwise, ArrowsLeftRight, ArrowCounterClockwise, CaretLeft, CaretRight, CheckCircle, Desktop, ImageSquare, MagnifyingGlassMinus, MagnifyingGlassPlus, Play, Star, Trash, UploadSimple, X } from "@phosphor-icons/react";
-import { TransformComponent, TransformWrapper } from "react-zoom-pan-pinch";
+import { ArrowClockwise, CheckCircle, Desktop, DownloadSimple, ImageSquare, Play, Star, Trash, UploadSimple, X } from "@phosphor-icons/react";
 import UiSearchField from "./UiSearchField";
 import UiToast from "./UiToast";
+import MediaViewer from "./MediaViewer";
 import { readJsonResponse } from "./apiResponse";
 import "./FavoriteMediaLibrary.css";
 
-const VIEWER_ZOOM_STEP = 0.2;
 const IMAGE_TYPES = ["image/png", "image/jpeg", "image/webp", "image/gif"];
 const VIDEO_TYPES = ["video/mp4", "video/webm", "video/quicktime"];
 const ACCEPTED_TYPES = [...IMAGE_TYPES, ...VIDEO_TYPES];
@@ -39,6 +38,7 @@ const formatSize = (value) => {
 };
 const formatDate = (value) => value ? new Date(value).toLocaleDateString("zh-CN", { month: "short", day: "numeric", year: "numeric" }) : "刚刚";
 const imageFileName = (item) => item.originalFileName || `${item.title || "favorite"}.png`;
+const mediaFileName = (item) => item.originalFileName || `${item.title || "favorite"}.${isVideoItem(item) ? "mp4" : "png"}`;
 const drawCover = (context, image, width, height) => {
   const scale = Math.max(width / image.width, height / image.height);
   const drawnWidth = image.width * scale, drawnHeight = image.height * scale;
@@ -80,14 +80,13 @@ export default function FavoriteMediaLibrary() {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [query, setQuery] = useState("");
+  const [mediaFilter, setMediaFilter] = useState("all");
   const [selected, setSelected] = useState(() => new Set());
   const [selectionMode, setSelectionMode] = useState(false);
   const [uploading, setUploading] = useState({ active: false, done: 0, total: 0, uploadedBytes: 0, totalBytes: 0, currentName: "" });
   const [draggingFiles, setDraggingFiles] = useState(false);
   const [pendingDropFiles, setPendingDropFiles] = useState([]);
   const [previewIndex, setPreviewIndex] = useState(null);
-  const [viewerOrientation, setViewerOrientation] = useState({ rotation: 0, mirrored: false });
-  const viewerTransform = useRef(null);
   const [menu, setMenu] = useState(null);
   const [deleteIds, setDeleteIds] = useState([]);
   const [wallpaper, setWallpaper] = useState({ open: false, item: null, monitors: [], selectedId: "", fitMode: "smart", loading: false, token: "" });
@@ -102,19 +101,11 @@ export default function FavoriteMediaLibrary() {
     } catch (exception) { setError(exception.message); setState("error"); }
   };
   useEffect(() => { load(); }, []);
-  const openPreview = (index) => {
-    setViewerOrientation({ rotation: 0, mirrored: false });
-    setPreviewIndex(index);
-  };
-  const closePreview = () => {
-    setPreviewIndex(null);
-    viewerTransform.current?.resetTransform(0, "easeOut");
-  };
+  const openPreview = (index) => setPreviewIndex(index);
+  const closePreview = () => setPreviewIndex(null);
   const navigatePreview = (delta) => {
     if (previewIndex === null || !filtered.length) return;
     const next = (previewIndex + delta + filtered.length) % filtered.length;
-    setViewerOrientation({ rotation: 0, mirrored: false });
-    viewerTransform.current?.resetTransform(140, "easeOut");
     setPreviewIndex(next);
   };
   useEffect(() => {
@@ -125,8 +116,12 @@ export default function FavoriteMediaLibrary() {
 
   const filtered = useMemo(() => {
     const keyword = query.trim().toLocaleLowerCase();
-    return keyword ? items.filter((item) => [item.title, item.originalFileName, item.prompt].some((value) => String(value || "").toLocaleLowerCase().includes(keyword))) : items;
-  }, [items, query]);
+    return items.filter((item) => {
+      const typeMatches = mediaFilter === "all" || (isVideoItem(item) ? "video" : "image") === mediaFilter;
+      const queryMatches = !keyword || [item.title, item.originalFileName, item.prompt].some((value) => String(value || "").toLocaleLowerCase().includes(keyword));
+      return typeMatches && queryMatches;
+    });
+  }, [items, mediaFilter, query]);
   useEffect(() => {
     if (previewIndex === null) return;
     const onKey = (event) => {
@@ -276,6 +271,7 @@ export default function FavoriteMediaLibrary() {
     <div className="favorite-toolbar">
       <UiSearchField aria-label="搜索我的最爱" placeholder="按标题、文件名或 Prompt 搜索" value={query} onChange={(event) => setQuery(event.target.value)} />
       <div className="favorite-toolbar-actions">
+        <label className="favorite-type-filter"><span>内容类型</span><select aria-label="按内容类型筛选" value={mediaFilter} onChange={(event) => { setMediaFilter(event.target.value); setSelected(new Set()); setSelectionMode(false); }}><option value="all">全部</option><option value="image">图片</option><option value="video">视频</option></select></label>
         {selectionMode ? <>
           <button type="button" onClick={toggleAll}><CheckCircle />{allSelected ? "取消全选" : "全选"}</button>
           <button type="button" className="danger" disabled={!selected.size} onClick={() => setDeleteIds([...selected])}><Trash />删除已选 {selected.size || ""}</button>
@@ -294,95 +290,36 @@ export default function FavoriteMediaLibrary() {
       <small>{Math.round((uploading.uploadedBytes / Math.max(1, uploading.totalBytes)) * 100)}%</small>
     </div>}
     {state === "loading" && !items.length ? <div className="favorite-empty"><Star /><strong>正在打开你的私人画廊…</strong></div>
-      : !filtered.length ? <div className="favorite-empty"><ImageSquare /><strong>{query ? "没有找到匹配的媒体" : "这里还没有喜欢的画面"}</strong><span>{query ? "换一个关键词试试" : "可以直接上传，或从图像工坊的“我的资产”批量转入"}</span>{!query && <button type="button" className="primary" onClick={() => inputRef.current?.click()}><UploadSimple />上传第一个媒体</button>}</div>
+      : !filtered.length ? <div className="favorite-empty"><ImageSquare /><strong>{query ? "没有找到匹配的媒体" : mediaFilter !== "all" ? "没有该类型的媒体" : "这里还没有喜欢的画面"}</strong><span>{query ? "换一个关键词试试" : mediaFilter !== "all" ? "切换内容类型查看其他媒体" : "可以直接上传，或从图像工坊的“我的资产”批量转入"}</span>{!query && mediaFilter === "all" && <button type="button" className="primary" onClick={() => inputRef.current?.click()}><UploadSimple />上传第一个媒体</button>}</div>
         : <div className="favorite-grid">{filtered.map((item, index) => <article className="favorite-card" key={item.id} data-selected={selected.has(item.id)}>
           <button type="button" className="favorite-image" aria-label={selectionMode ? `${selected.has(item.id) ? "取消选择" : "选择"} ${item.title}` : `预览 ${item.title}`} onClick={() => selectionMode ? toggle(item.id) : openPreview(index)} onContextMenu={(event) => { event.preventDefault(); setMenu({ item, x: Math.min(event.clientX, window.innerWidth - 210), y: Math.min(event.clientY, window.innerHeight - 150) }); }}>{isVideoItem(item) ? <><img src={item.thumbnailUrl || item.contentUrl} alt="" loading="lazy" /><span className="favorite-video-badge"><Play weight="fill" /></span></> : <img src={item.thumbnailUrl || item.contentUrl} alt="" loading="lazy" />}</button>
           <div className="favorite-card-meta"><strong>{item.title}</strong><span>{formatDate(item.createdAt)} · {formatSize(item.fileSize)}</span></div>
         </article>)}</div>}
 
     {menu && <div className="favorite-context-menu" style={{ left: menu.x, top: menu.y }}>
+      <a href={menu.item.contentUrl} download={mediaFileName(menu.item)} onClick={() => setMenu(null)}><DownloadSimple />另存为下载</a>
       <button type="button" onClick={() => openWallpaper(menu.item)}><Desktop />应用为壁纸</button>
       <button type="button" onClick={() => { const targetIndex = filtered.findIndex((entry) => entry.id === menu.item.id); setMenu(null); if (targetIndex >= 0) openPreview(targetIndex); }}><ImageSquare />查看原图</button>
       <button type="button" className="danger" onClick={() => { setMenu(null); setDeleteIds([menu.item.id]); }}><Trash />从我的最爱移除</button>
     </div>}
-    {previewIndex !== null && filtered[previewIndex] && <div className="favorite-preview" role="dialog" aria-modal="true" aria-label={`预览 ${filtered[previewIndex].title}`} onMouseDown={(event) => event.target === event.currentTarget && closePreview()}>
-      <div className="favorite-preview-panel">
-        <header className="favorite-preview-header">
-          <div className="favorite-preview-tools">
-            {isVideoItem(filtered[previewIndex]) ? <small>← / → 切换 · Esc 关闭</small> : <>
-              <button type="button" aria-label="缩小图片" title="缩小 (每次 20%)" onClick={() => viewerTransform.current?.zoomOut(VIEWER_ZOOM_STEP, 120, "easeOut")}><MagnifyingGlassMinus /></button>
-              <button type="button" aria-label="恢复原始大小和位置" title="恢复原位" onClick={() => viewerTransform.current?.resetTransform(140, "easeOut")}><ArrowCounterClockwise /></button>
-              <button type="button" aria-label="放大图片" title="放大 (每次 20%)" onClick={() => viewerTransform.current?.zoomIn(VIEWER_ZOOM_STEP, 120, "easeOut")}><MagnifyingGlassPlus /></button>
-              <button type="button" aria-label="顺时针旋转图片 90 度" title="顺时针旋转 90°" onClick={() => setViewerOrientation((current) => ({ ...current, rotation: (current.rotation + 90) % 360 }))}><ArrowClockwise /></button>
-              <button type="button" aria-pressed={viewerOrientation.mirrored} aria-label="水平镜像图片" title="水平镜像" onClick={() => setViewerOrientation((current) => ({ ...current, mirrored: !current.mirrored }))}><ArrowsLeftRight /></button>
-              <small>滚轮缩放 · 双击切换 · ← / → 切换 · Esc 关闭</small>
-            </>}
-          </div>
-          <div className="favorite-preview-title" title={filtered[previewIndex].originalFileName || filtered[previewIndex].title}>
-            <strong>{filtered[previewIndex].title}</strong>
-            <span>{previewIndex + 1} / {filtered.length}</span>
-            <small>{filtered[previewIndex].originalFileName} · {formatSize(filtered[previewIndex].fileSize)} · {formatDate(filtered[previewIndex].createdAt)}</small>
-          </div>
-          <div className="favorite-preview-actions">
-            <button type="button" aria-label="应用为壁纸" title="应用为壁纸" onClick={() => openWallpaper(filtered[previewIndex])}><Desktop /></button>
-            <button type="button" aria-label="关闭预览" title="关闭预览 (Esc)" onClick={closePreview}><X /></button>
-          </div>
-        </header>
-        <div className="favorite-preview-stage">
-          {isVideoItem(filtered[previewIndex]) ? (
-            <video
-              className="favorite-preview-video"
-              src={filtered[previewIndex].contentUrl}
-              poster={filtered[previewIndex].thumbnailUrl || undefined}
-              controls
-              autoPlay
-              loop
-              preload="metadata"
-            />
-          ) : (
-            <TransformWrapper
-              ref={viewerTransform}
-              initialScale={1}
-              minScale={1}
-              maxScale={8}
-              centerOnInit
-              centerZoomedOut
-              limitToBounds
-              disablePadding
-              smooth={false}
-              wheel={{ step: VIEWER_ZOOM_STEP }}
-              doubleClick={{ mode: "toggle", step: 1, animationTime: 180, animationType: "easeOut" }}
-              zoomAnimation={{ animationTime: 160, animationType: "easeOut" }}
-              panning={{ velocityDisabled: false }}
-            >
-              {() => (
-                <TransformComponent wrapperClass="favorite-preview-zoom" contentClass="favorite-preview-zoom-content">
-                  <img
-                    className={`favorite-preview-image ${viewerOrientation.rotation % 180 ? "is-quarter-turn" : ""}`}
-                    style={{ transform: `rotate(${viewerOrientation.rotation}deg) scaleX(${viewerOrientation.mirrored ? -1 : 1})` }}
-                    src={filtered[previewIndex].contentUrl}
-                    alt={filtered[previewIndex].title}
-                    draggable={false}
-                  />
-                </TransformComponent>
-              )}
-            </TransformWrapper>
-          )}
-          {filtered.length > 1 && <>
-            <button type="button" className="favorite-preview-nav prev" aria-label="上一张" onClick={() => navigatePreview(-1)}><CaretLeft /></button>
-            <button type="button" className="favorite-preview-nav next" aria-label="下一张" onClick={() => navigatePreview(1)}><CaretRight /></button>
-          </>}
-        </div>
-        <footer className="favorite-preview-footer">
-          <span><strong>{filtered[previewIndex].width || "?"} × {filtered[previewIndex].height || "?"}</strong><small>原始分辨率</small></span>
-          <span><strong>{filtered[previewIndex].sourcePlatform || "本地上传"}</strong><small>来源</small></span>
-          <span><strong>{filtered[previewIndex].prompt ? "已记录" : "无"}</strong><small>Prompt</small></span>
-          <div className="favorite-preview-footer-actions">
-            <button type="button" onClick={() => openWallpaper(filtered[previewIndex])}><Desktop />选择显示器并应用为壁纸</button>
-          </div>
-        </footer>
-      </div>
-    </div>}
+    {previewIndex !== null && filtered[previewIndex] && (() => {
+      const item = filtered[previewIndex];
+      return <MediaViewer
+        title={item.title}
+        subtitle={`${item.originalFileName || mediaFileName(item)} · ${formatSize(item.fileSize)} · ${formatDate(item.createdAt)}`}
+        index={previewIndex}
+        total={filtered.length}
+        src={item.contentUrl}
+        poster={item.thumbnailUrl}
+        isVideo={isVideoItem(item)}
+        alt={item.title}
+        onClose={closePreview}
+        onNavigate={navigatePreview}
+        onContextMenu={(event) => { event.preventDefault(); setMenu({ item, x: Math.min(event.clientX, window.innerWidth - 210), y: Math.min(event.clientY, window.innerHeight - 150) }); }}
+        actions={<button type="button" aria-label="应用为壁纸" title="应用为壁纸" onClick={() => openWallpaper(item)}><Desktop /></button>}
+        footer={<><span className="favorite-viewer-stat"><strong>{item.width || "?"} × {item.height || "?"}</strong><small>原始分辨率</small></span><span className="favorite-viewer-stat"><strong>{item.sourcePlatform || "本地上传"}</strong><small>来源</small></span><span className="favorite-viewer-stat"><strong>{item.prompt ? "已记录" : "无"}</strong><small>Prompt</small></span><div className="favorite-preview-footer-actions"><button type="button" onClick={() => openWallpaper(item)}><Desktop />选择显示器并应用为壁纸</button></div></>}
+      />;
+    })()}
     {!!pendingDropFiles.length && <div className="favorite-confirm" role="dialog" aria-modal="true" aria-label="确认拖放上传"><div><UploadSimple /><h3>上传这些媒体？</h3><p>即将把 {pendingDropFiles.length} 个图片或视频复制到服务器“我的最爱”。</p><span className="favorite-drop-files">{pendingDropFiles.slice(0, 4).map((file) => file.name).join("、")}{pendingDropFiles.length > 4 ? ` 等 ${pendingDropFiles.length} 个文件` : ""}</span><footer><button type="button" onClick={() => setPendingDropFiles([])}>取消</button><button type="button" className="primary" onClick={() => { const files = pendingDropFiles; setPendingDropFiles([]); uploadFiles(files); }}>确认上传</button></footer></div></div>}
     {!!deleteIds.length && <div className="favorite-confirm" role="dialog" aria-modal="true" aria-label="确认删除"><div><Trash /><h3>删除选中的媒体？</h3><p>将按 ID 删除服务器上的 {deleteIds.length} 个原图及其记录，此操作不可恢复。</p><footer><button type="button" onClick={() => setDeleteIds([])}>取消</button><button type="button" className="danger" onClick={remove}>确认删除</button></footer></div></div>}
     {wallpaper.open && <div className="favorite-confirm wallpaper-dialog" role="dialog" aria-modal="true" aria-label="选择壁纸显示器"><div>

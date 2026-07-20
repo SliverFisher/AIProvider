@@ -679,7 +679,7 @@ describe("Comfy image generation flow", () => {
     expect(screen.getByText("1 / 2")).toBeTruthy();
     expect(screen.getByText("done.png")).toBeTruthy();
 
-    fireEvent.contextMenu(document.querySelector(".history-lightbox"));
+    fireEvent.contextMenu(document.querySelector(".media-viewer-stage"));
     fireEvent.click(screen.getByRole("button", { name: "删除" }));
 
     await waitFor(() => expect(localMutationIds).toEqual([100]));
@@ -697,7 +697,7 @@ describe("Comfy image generation flow", () => {
     fireEvent.click(screen.getByRole("button", { name: "下一张图片" }));
     expect(screen.getByText("2 / 2")).toBeTruthy();
 
-    fireEvent.contextMenu(document.querySelector(".history-lightbox"));
+    fireEvent.contextMenu(document.querySelector(".media-viewer-stage"));
     fireEvent.click(screen.getByRole("button", { name: "删除" }));
 
     await waitFor(() => expect(localMutationIds).toEqual([101]));
@@ -720,7 +720,7 @@ describe("Comfy image generation flow", () => {
     fireEvent.keyDown(window, { key: "c", metaKey: true });
     await waitFor(() => expect(navigator.clipboard.write).toHaveBeenCalledTimes(3));
 
-    fireEvent.contextMenu(document.querySelector(".history-lightbox"));
+    fireEvent.contextMenu(document.querySelector(".media-viewer-stage"));
     fireEvent.click(screen.getByRole("button", { name: "复制图片" }));
     await waitFor(() => expect(navigator.clipboard.write).toHaveBeenCalledTimes(4));
 
