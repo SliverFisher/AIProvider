@@ -244,12 +244,7 @@ const formatTaskElapsed = (task, now = Date.now()) => {
   return formatGenerationDuration(Math.max(0, now - started));
 };
 function TaskElapsed({ task }) {
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    const timer = window.setInterval(() => setNow(Date.now()), 1000);
-    return () => window.clearInterval(timer);
-  }, []);
-  return formatTaskElapsed(task, now);
+  return formatTaskElapsed(task);
 }
 const GalleryImageWall = memo(function GalleryImageWall({ entries, selectionMode, selectedImages, onAction }) {
   return <div className="local-image-wall">
@@ -426,7 +421,6 @@ export default function ComfyLocalWorkbench({ mode = "workbench", active = true 
     comfyHistoryLoadingIds = useRef(new Set()),
     galleryCompletionRegisteredIds = useRef(new Set()),
     historyTimingCache = useRef(new Map()),
-    loadWorkflowsRef = useRef(null),
     bridgeInstanceIdRef = useRef(""),
     bridgeExitIntent = useRef(""),
     defaultPresetApplied = useRef(""),
@@ -947,14 +941,6 @@ export default function ComfyLocalWorkbench({ mode = "workbench", active = true 
       setWorkflowLoading(false);
     }
   };
-  loadWorkflowsRef.current = loadWorkflows;
-  useEffect(() => {
-    if (mode !== "workbench" || !active || !token || launcher !== "ready" || !running) return undefined;
-    const timer = window.setInterval(() => {
-      loadWorkflowsRef.current?.(token).catch(() => { /* A later scan retries automatically. */ });
-    }, 10000);
-    return () => window.clearInterval(timer);
-  }, [active, launcher, mode, running, token]);
   useEffect(() => {
     if (mode !== "workbench" || !active || !token || launcher !== "ready" || !running) return undefined;
     let cancelled = false;

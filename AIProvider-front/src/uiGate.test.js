@@ -8,6 +8,13 @@ const read = (name) => readFileSync(path.join(srcDir, name), "utf8");
 const jsxFiles = readdirSync(srcDir).filter((name) => name.endsWith(".jsx"));
 
 describe("UI release gate", () => {
+  it("mounts the persistent image workshop only after its first visit", () => {
+    const app = read("App.jsx");
+    expect(app).toContain('const [workshopMounted, setWorkshopMounted] = useState(() => viewFromPath() === "workshop")');
+    expect(app).toContain('if (view === "workshop") setWorkshopMounted(true)');
+    expect(app).toContain('{workshopMounted && <div className={`tool-home compact-home persistent-workshop');
+  });
+
   it("routes every search input through UiSearchField", () => {
     const violations = jsxFiles.flatMap((name) => {
       if (name === "UiSearchField.jsx") return [];

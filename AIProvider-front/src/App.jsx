@@ -274,12 +274,16 @@ function useDashboardData() {
 function App() {
   const viewFromPath = () => ({ "/favorites": "favorites", "/workshop": "workshop", "/manual-editor": "manualEditor", "/video-editor": "videoEditor", "/market": "market", "/prompts": "prompts", "/prompt-options": "promptOptions", "/maid": "maid", "/admin/monitor": "monitor", "/remote-codex": "remoteCodex", "/foundry": "foundry", "/file-transfer": "fileTransfer", "/camera": "camera", "/twitter": "twitter", "/content-operations": "contentOperations", "/appearance": "appearance", "/settings": "settings" })[window.location.pathname] || "home";
   const [view, setView] = useState(viewFromPath);
+  const [workshopMounted, setWorkshopMounted] = useState(() => viewFromPath() === "workshop");
   const [promptOptionCategory, setPromptOptionCategory] = useState("");
   const dashboard = useDashboardData();
   const current = NAV.find((item) => item.key === (view === "promptOptions" ? "prompts" : view));
   useEffect(() => {
     const path = ({ favorites: "/favorites", workshop: "/workshop", manualEditor: "/manual-editor", videoEditor: "/video-editor", market: "/market", prompts: "/prompts", promptOptions: "/prompt-options", maid: "/maid", monitor: "/admin/monitor", remoteCodex: "/remote-codex", foundry: "/foundry", fileTransfer: "/file-transfer", camera: "/camera", twitter: "/twitter", contentOperations: "/content-operations", appearance: "/appearance", settings: "/settings" })[view] || "/";
     if (window.location.pathname !== path) window.history.replaceState({}, "", path);
+  }, [view]);
+  useEffect(() => {
+    if (view === "workshop") setWorkshopMounted(true);
   }, [view]);
   useEffect(() => {
     const onPop = () => setView(viewFromPath());
@@ -341,9 +345,9 @@ function App() {
         )}
         {view === "home" && <HomeView data={dashboard} onOpenWorkshop={() => setView("workshop")} />}
         {view === "favorites" && <FavoriteMediaLibrary />}
-        <div className={`tool-home compact-home persistent-workshop ${view === "workshop" ? "" : "persistent-view-hidden"}`} aria-hidden={view !== "workshop"}>
+        {workshopMounted && <div className={`tool-home compact-home persistent-workshop ${view === "workshop" ? "" : "persistent-view-hidden"}`} aria-hidden={view !== "workshop"}>
           <ComfyConsole embedded active={view === "workshop"} />
-        </div>
+        </div>}
         {view === "manualEditor" && <ManualImageEditor />}
         {view === "videoEditor" && <VideoEditor />}
         {view === "market" && <CryptoMarket />}
