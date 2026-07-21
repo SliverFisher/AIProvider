@@ -1,6 +1,7 @@
 package com.aiprovider.service;
 
 import com.aiprovider.mapper.AsrRecordMapper;
+import com.aiprovider.model.vo.AsrQuotaVO;
 import com.aiprovider.model.vo.AsrRecordVO;
 import com.aiprovider.repository.AsrRecordRepository;
 import org.junit.jupiter.api.Test;
@@ -18,9 +19,9 @@ class AsrTranscriptionServiceTest {
 
     @Test void persistsAndReturnsSuccessfulTranscriptionWithoutLoggingContent() throws Exception {
         AsrRecordRepository repository=mock(AsrRecordRepository.class);AsrProviderClient client=mock(AsrProviderClient.class);AsrTranscriptionService service=service(repository,client);when(repository.findByRequestId(anyString())).thenReturn(null);
-        when(repository.findCharacterName("character_001")).thenReturn("小爱");doAnswer(invocation->{AsrRecordMapper.Record row=invocation.getArgument(0);row.setId(7L);return 1;}).when(repository).insert(any());when(repository.assignRecordId(eq(7L),anyString())).thenReturn(1);when(client.transcribe(any(),eq("whisper-large-v3"),eq("zh"))).thenReturn(new AsrProviderClient.Result("今天天气很好",8420L));when(repository.markSuccess(eq(7L),eq("今天天气很好"),eq(8420L),anyLong())).thenReturn(1);when(repository.findByRecordId(anyString())).thenReturn(successRow());
+        when(repository.findCharacterName("character_001")).thenReturn("小爱");doAnswer(invocation->{AsrRecordMapper.Record row=invocation.getArgument(0);row.setId(7L);return 1;}).when(repository).insert(any());when(repository.assignRecordId(eq(7L),anyString())).thenReturn(1);when(client.transcribe(any(),eq("whisper-large-v3"),eq("zh"))).thenReturn(new AsrProviderClient.Result("今天天气很好",8420L,2000L,1997L,"3h"));when(repository.markSuccess(eq(7L),eq("今天天气很好"),eq(8420L),anyLong(),eq(2000L),eq(1997L),eq("3h"))).thenReturn(1);when(repository.findByRecordId(anyString())).thenReturn(successRow());
         AsrRecordVO result=service.transcribe(audio(),"character_001","session_001","zh","request_001");
-        assertEquals("今天天气很好",result.getRecognizedText());assertEquals("小爱",result.getCharacterNameSnapshot());verify(client).transcribe(any(),eq("whisper-large-v3"),eq("zh"));verify(repository).markSuccess(eq(7L),eq("今天天气很好"),eq(8420L),anyLong());
+        assertEquals("今天天气很好",result.getRecognizedText());assertEquals("小爱",result.getCharacterNameSnapshot());verify(client).transcribe(any(),eq("whisper-large-v3"),eq("zh"));verify(repository).markSuccess(eq(7L),eq("今天天气很好"),eq(8420L),anyLong(),eq(2000L),eq(1997L),eq("3h"));
     }
 
     @Test void replaysCompletedRequestWithoutCallingProviderAgain() throws Exception {
@@ -35,7 +36,9 @@ class AsrTranscriptionServiceTest {
         assertEquals("ASR_TRANSCRIPTION_FAILED",error.getCode());assertEquals("request_001",error.getRequestId());verify(repository).markFailed(eq(7L),anyLong(),eq("ASR_PROVIDER_HTTP_429"),eq("语音识别失败"));
     }
 
-    private AsrTranscriptionService service(AsrRecordRepository repository,AsrProviderClient client){return new AsrTranscriptionService(repository,client,temp.toString(),"groq","whisper-large-v3",26214400L);}
+    @Test void reportsProviderRequestSnapshotAndRecordedAudioUsage(){AsrRecordRepository repository=mock(AsrRecordRepository.class);AsrTranscriptionService service=service(repository,mock(AsrProviderClient.class));Map<String,Object> snapshot=new HashMap<>();snapshot.put("requestLimit",2000L);snapshot.put("requestsRemaining",1997L);snapshot.put("requestsResetAfter","3h");snapshot.put("capturedAt",LocalDateTime.of(2026,7,22,12,0));when(repository.findLatestQuotaSnapshot("groq","whisper-large-v3")).thenReturn(snapshot);when(repository.sumAudioDurationMs(eq("groq"),eq("whisper-large-v3"),any(),any())).thenReturn(4500L,12500L);AsrQuotaVO quota=service.quota();assertEquals(1997L,quota.getDailyRequestsRemaining());assertEquals(5L,quota.getHourlyAudioUsedSeconds());assertEquals(13L,quota.getDailyAudioUsedSeconds());assertEquals(7195L,quota.getHourlyAudioRemainingSeconds());assertEquals(28787L,quota.getDailyAudioRemainingSeconds());assertEquals("AIPROVIDER_RECORDED",quota.getAudioUsageScope());}
+
+    private AsrTranscriptionService service(AsrRecordRepository repository,AsrProviderClient client){return new AsrTranscriptionService(repository,client,temp.toString(),"groq","whisper-large-v3",26214400L,7200L,28800L);}
     private MockMultipartFile audio(){return new MockMultipartFile("audio","voice.webm","audio/webm",new byte[]{1,2,3});}
     private Map<String,Object> successRow(){Map<String,Object> row=new HashMap<>();row.put("recordId","asr_20260722_000007");row.put("requestId","request_001");row.put("characterId","character_001");row.put("characterNameSnapshot","小爱");row.put("sessionId","session_001");row.put("audioFormat","webm");row.put("audioSize",3L);row.put("audioDurationMs",8420L);row.put("recognizedText","今天天气很好");row.put("provider","groq");row.put("model","whisper-large-v3");row.put("language","zh");row.put("processingTimeMs",1260L);row.put("status","SUCCESS");row.put("createdAt",LocalDateTime.of(2026,7,22,12,0));return row;}
 }

@@ -14,8 +14,8 @@ public interface AsrRecordMapper {
     @Update("UPDATE c_AsrTranscriptionRecords SET RecordId=#{recordId} WHERE Id=#{id} AND RecordId IS NULL")
     int assignRecordId(@Param("id") long id,@Param("recordId") String recordId);
 
-    @Update("UPDATE c_AsrTranscriptionRecords SET RecognizedText=#{text},AudioDurationMs=#{durationMs},ProcessingTimeMs=#{processingMs},Status='SUCCESS',ErrorCode=NULL,ErrorMessage=NULL WHERE Id=#{id} AND Status='PROCESSING'")
-    int markSuccess(@Param("id") long id,@Param("text") String text,@Param("durationMs") Long durationMs,@Param("processingMs") long processingMs);
+    @Update("UPDATE c_AsrTranscriptionRecords SET RecognizedText=#{text},AudioDurationMs=#{durationMs},ProcessingTimeMs=#{processingMs},RateLimitRequestsLimit=#{requestLimit},RateLimitRequestsRemaining=#{requestsRemaining},RateLimitRequestsResetAfter=#{requestsResetAfter},RateLimitCapturedAt=CASE WHEN #{requestLimit} IS NOT NULL AND #{requestsRemaining} IS NOT NULL THEN CURRENT_TIMESTAMP(6) ELSE NULL END,Status='SUCCESS',ErrorCode=NULL,ErrorMessage=NULL WHERE Id=#{id} AND Status='PROCESSING'")
+    int markSuccess(@Param("id") long id,@Param("text") String text,@Param("durationMs") Long durationMs,@Param("processingMs") long processingMs,@Param("requestLimit") Long requestLimit,@Param("requestsRemaining") Long requestsRemaining,@Param("requestsResetAfter") String requestsResetAfter);
 
     @Update("UPDATE c_AsrTranscriptionRecords SET ProcessingTimeMs=#{processingMs},Status='FAILED',ErrorCode=#{errorCode},ErrorMessage=#{errorMessage} WHERE Id=#{id} AND Status='PROCESSING'")
     int markFailed(@Param("id") long id,@Param("processingMs") long processingMs,@Param("errorCode") String errorCode,@Param("errorMessage") String errorMessage);
@@ -42,6 +42,12 @@ public interface AsrRecordMapper {
     List<Map<String,Object>> findCharacters();
     @Select("SELECT DISTINCT Provider provider,Model model FROM c_AsrTranscriptionRecords ORDER BY Provider,Model")
     List<Map<String,Object>> findProviderModels();
+
+    @Select("SELECT RateLimitRequestsLimit requestLimit,RateLimitRequestsRemaining requestsRemaining,RateLimitRequestsResetAfter requestsResetAfter,RateLimitCapturedAt capturedAt FROM c_AsrTranscriptionRecords WHERE Provider=#{provider} AND Model=#{model} AND RateLimitCapturedAt IS NOT NULL ORDER BY RateLimitCapturedAt DESC,Id DESC LIMIT 1")
+    Map<String,Object> findLatestQuotaSnapshot(@Param("provider") String provider,@Param("model") String model);
+
+    @Select("SELECT COALESCE(SUM(AudioDurationMs),0) FROM c_AsrTranscriptionRecords WHERE Provider=#{provider} AND Model=#{model} AND Status='SUCCESS' AND CreatedAt &gt;= #{start} AND CreatedAt &lt; #{end}")
+    long sumAudioDurationMs(@Param("provider") String provider,@Param("model") String model,@Param("start") LocalDateTime start,@Param("end") LocalDateTime end);
 
     class Record {
         private Long id;private String requestId;private String characterId;private String characterNameSnapshot;private String sessionId;private String audioPath;private String audioFormat;private long audioSize;private String provider;private String model;private String language;

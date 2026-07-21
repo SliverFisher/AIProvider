@@ -16,12 +16,12 @@ class AsrProviderClientTest {
 
     @Test void sendsAuthenticatedMultipartAndParsesSegmentDuration() throws Exception {
         RestTemplate http=mock(RestTemplate.class);String endpoint="https://api.groq.test/openai/v1/audio/transcriptions";
-        when(http.exchange(eq(endpoint),eq(HttpMethod.POST),any(HttpEntity.class),eq(String.class))).thenReturn(ResponseEntity.ok("{\"text\":\"今天天气很好\",\"segments\":[{\"end\":2.5},{\"end\":8.42}]}"));
+        HttpHeaders responseHeaders=new HttpHeaders();responseHeaders.set("x-ratelimit-limit-requests","2000");responseHeaders.set("x-ratelimit-remaining-requests","1997");responseHeaders.set("x-ratelimit-reset-requests","3h12m");when(http.exchange(eq(endpoint),eq(HttpMethod.POST),any(HttpEntity.class),eq(String.class))).thenReturn(new ResponseEntity<>("{\"text\":\"今天天气很好\",\"segments\":[{\"end\":2.5},{\"end\":8.42}]}",responseHeaders,HttpStatus.OK));
         AsrProviderClient client=new AsrProviderClient(new ObjectMapper(),http,endpoint,"test-secret");Path audio=temp.resolve("voice.webm");Files.write(audio,new byte[]{1,2,3});
 
         AsrProviderClient.Result result=client.transcribe(audio,"whisper-large-v3","zh");
 
-        assertEquals("今天天气很好",result.getText());assertEquals(8420L,result.getDurationMs());ArgumentCaptor<HttpEntity> entity=ArgumentCaptor.forClass(HttpEntity.class);verify(http).exchange(eq(endpoint),eq(HttpMethod.POST),entity.capture(),eq(String.class));assertEquals("Bearer test-secret",entity.getValue().getHeaders().getFirst(HttpHeaders.AUTHORIZATION));assertEquals(MediaType.MULTIPART_FORM_DATA,entity.getValue().getHeaders().getContentType());
+        assertEquals("今天天气很好",result.getText());assertEquals(8420L,result.getDurationMs());assertEquals(2000L,result.getRequestLimit());assertEquals(1997L,result.getRequestsRemaining());assertEquals("3h12m",result.getRequestsResetAfter());ArgumentCaptor<HttpEntity> entity=ArgumentCaptor.forClass(HttpEntity.class);verify(http).exchange(eq(endpoint),eq(HttpMethod.POST),entity.capture(),eq(String.class));assertEquals("Bearer test-secret",entity.getValue().getHeaders().getFirst(HttpHeaders.AUTHORIZATION));assertEquals(MediaType.MULTIPART_FORM_DATA,entity.getValue().getHeaders().getContentType());
     }
 
     @Test void rejectsEmptyProviderText() throws Exception {

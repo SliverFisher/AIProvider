@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ArrowClockwise, CaretLeft, CaretRight, CheckCircle, MicrophoneStage, PencilSimple, WarningCircle, X } from "@phosphor-icons/react";
+import { ArrowClockwise, CaretLeft, CaretRight, CheckCircle, Gauge, MicrophoneStage, PencilSimple, WarningCircle, X } from "@phosphor-icons/react";
 import UiSearchField from "./UiSearchField";
 import UiToast from "./UiToast";
 import { readJsonResponse } from "./apiResponse";
@@ -9,12 +9,14 @@ const emptyFilters={keyword:"",characterId:"",status:"",provider:"",model:"",sta
 const duration=(value)=>value==null?"—":value<1000?`${value} ms`:`${(value/1000).toFixed(1)} 秒`;
 const size=(value)=>{const bytes=Number(value||0);if(bytes<1024)return `${bytes} B`;if(bytes<1024*1024)return `${(bytes/1024).toFixed(1)} KB`;return `${(bytes/1024/1024).toFixed(2)} MB`;};
 const dateTime=(value)=>value?new Date(value).toLocaleString("zh-CN",{hour12:false}):"—";
+const timeAmount=(seconds)=>{const value=Math.max(0,Number(seconds||0));const hours=Math.floor(value/3600);const minutes=Math.floor((value%3600)/60);const rest=Math.floor(value%60);return [hours&&`${hours} 小时`,minutes&&`${minutes} 分`,(!hours&&!minutes||rest)&&`${rest} 秒`].filter(Boolean).join(" ");};
+const percent=(used,limit)=>limit>0?Math.min(100,Math.max(0,Number(used||0)/Number(limit)*100)):0;
 async function api(path,options){const response=await fetch(path,options);const body=await readJsonResponse(response,"语音识别记录响应异常");if(!response.ok||body.code!==200)throw new Error(body.message||`请求失败 · ${response.status}`);return body.data;}
 
 export default function AsrRecords(){
-  const [filters,setFilters]=useState(emptyFilters);const [page,setPage]=useState(1);const [data,setData]=useState({items:[],total:0,pages:1});const [options,setOptions]=useState({characters:[],providerModels:[]});const [selected,setSelected]=useState(null);const [loading,setLoading]=useState(true);const [error,setError]=useState("");const [notice,setNotice]=useState("");
+  const [filters,setFilters]=useState(emptyFilters);const [page,setPage]=useState(1);const [data,setData]=useState({items:[],total:0,pages:1});const [quota,setQuota]=useState(null);const [options,setOptions]=useState({characters:[],providerModels:[]});const [selected,setSelected]=useState(null);const [loading,setLoading]=useState(true);const [error,setError]=useState("");const [notice,setNotice]=useState("");
   const query=useMemo(()=>{const params=new URLSearchParams({page:String(page),pageSize:"20"});Object.entries(filters).forEach(([key,value])=>{if(value)params.set(key,key.endsWith("Time")?new Date(value).toISOString():value);});return params.toString();},[filters,page]);
-  const load=useCallback(async()=>{setLoading(true);setError("");try{setData(await api(`/api/admin/asr/records?${query}`));}catch(e){setError(e.message);}finally{setLoading(false);}},[query]);
+  const load=useCallback(async()=>{setLoading(true);setError("");try{const [records,currentQuota]=await Promise.all([api(`/api/admin/asr/records?${query}`),api("/api/admin/asr/records/quota")]);setData(records);setQuota(currentQuota);}catch(e){setError(e.message);}finally{setLoading(false);}},[query]);
   useEffect(()=>{load();},[load]);useEffect(()=>{api("/api/admin/asr/records/filters").then(setOptions).catch((e)=>setError(e.message));},[]);
   const updateFilter=(key,value)=>{setPage(1);setFilters((current)=>({...current,[key]:value,...(key==="provider"?{model:""}:null)}));};
   const models=useMemo(()=>[...new Set(options.providerModels.filter((item)=>!filters.provider||item.provider===filters.provider).map((item)=>item.model))],[options.providerModels,filters.provider]);
@@ -22,6 +24,11 @@ export default function AsrRecords(){
   const saveCorrection=async()=>{try{await api(`/api/admin/asr/records/${selected.recordId}/correction`,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({correctedText:selected.correctedText||""})});setNotice("人工修正文字已保存");setSelected(await api(`/api/admin/asr/records/${selected.recordId}`));load();}catch(e){setError(e.message);}};
   return <section className="asr-records-page">
     <header className="asr-head"><div><span><MicrophoneStage weight="fill"/>云服务</span><h1>语音识别记录</h1><p>逐条播放 AIMaid 录音，核对识别结果并保存人工修正。</p></div><button type="button" onClick={load} disabled={loading}><ArrowClockwise className={loading?"is-spinning":""}/>{loading?"加载中":"刷新"}</button></header>
+    {quota&&<section className="asr-quota-card" aria-label="Groq 语音识别额度"><header><div><span><Gauge weight="fill"/>Groq 额度</span><strong>{quota.model}</strong></div><small>{quota.providerSnapshotAt?`Groq 快照 ${dateTime(quota.providerSnapshotAt)}`:"完成一次真实转写后获取 Groq 请求额度"}</small></header><div className="asr-quota-grid">
+      <article><span>每日请求剩余</span><strong>{quota.dailyRequestsRemaining==null?"暂无快照":`${quota.dailyRequestsRemaining.toLocaleString()} 次`}</strong><small>{quota.dailyRequestLimit==null?"等待 Groq 响应头":`总额 ${quota.dailyRequestLimit.toLocaleString()} 次${quota.requestsResetAfter?` · 响应时显示 ${quota.requestsResetAfter} 后重置`:""}`}</small><progress aria-label="每日请求已用比例" max="100" value={quota.dailyRequestLimit==null?0:percent(quota.dailyRequestLimit-quota.dailyRequestsRemaining,quota.dailyRequestLimit)}/></article>
+      <article><span>近 1 小时音频剩余</span><strong>{timeAmount(quota.hourlyAudioRemainingSeconds)}</strong><small>本站已用 {timeAmount(quota.hourlyAudioUsedSeconds)} / {timeAmount(quota.hourlyAudioLimitSeconds)}</small><progress aria-label="近一小时音频已用比例" max="100" value={percent(quota.hourlyAudioUsedSeconds,quota.hourlyAudioLimitSeconds)}/></article>
+      <article><span>今日音频剩余</span><strong>{timeAmount(quota.dailyAudioRemainingSeconds)}</strong><small>本站已用 {timeAmount(quota.dailyAudioUsedSeconds)} / {timeAmount(quota.dailyAudioLimitSeconds)}</small><progress aria-label="今日音频已用比例" max="100" value={percent(quota.dailyAudioUsedSeconds,quota.dailyAudioLimitSeconds)}/></article>
+    </div><p>请求剩余来自 Groq 组织级响应头；音频用量只统计经 AIProvider 成功转写的记录，Groq 控制台或其他 API Key 的调用不包含在内。</p></section>}
     <div className="asr-filter-card" aria-label="语音识别记录筛选">
       <UiSearchField aria-label="搜索识别文字" placeholder="搜索识别文字" value={filters.keyword} onChange={(e)=>updateFilter("keyword",e.target.value)}/>
       <label><span>角色</span><select aria-label="按角色筛选" value={filters.characterId} onChange={(e)=>updateFilter("characterId",e.target.value)}><option value="">全部角色</option>{options.characters.map((item)=><option key={item.characterId} value={item.characterId}>{item.characterName} · {item.characterId}</option>)}</select></label>

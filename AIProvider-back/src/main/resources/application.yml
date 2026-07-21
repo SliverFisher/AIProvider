@@ -41,6 +41,8 @@ asr:
   max-audio-bytes: ${ASR_MAX_AUDIO_BYTES:26214400}
   connect-timeout-ms: ${ASR_CONNECT_TIMEOUT_MS:5000}
   read-timeout-ms: ${ASR_READ_TIMEOUT_MS:120000}
+  hourly-audio-limit-seconds: ${ASR_HOURLY_AUDIO_LIMIT_SECONDS:7200}
+  daily-audio-limit-seconds: ${ASR_DAILY_AUDIO_LIMIT_SECONDS:28800}
 
 mybatis:
   mapper-locations: classpath:mapper/*.xml
