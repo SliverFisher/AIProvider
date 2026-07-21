@@ -5,11 +5,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import PromptOptionManager from "./PromptOptionManager";
 
 const item = { id: "black_pantyhose", category: "Clothing", name: "黑丝袜 / 黑色连裤袜", prompt: "black pantyhose", type: "positive", reverseId: null, sortOrder: 11, enabled: true, allowMultiple: true };
+const categories = [
+  ["Body", "身体", 1], ["Clothing", "服装", 2], ["Bondage", "束缚", 3], ["Feature", "特征", 4], ["Sex Act", "性行为", 5], ["Sex Position", "性姿势", 6],
+].map(([category, label, sortOrder]) => ({ category, label, sortOrder, multiple: true }));
 const response = (data) => new Response(JSON.stringify({ code: 200, data }), { status: 200, headers: { "Content-Type": "application/json" } });
 
 describe("PromptOptionManager", () => {
   let writes;
-  beforeEach(() => { writes = []; vi.stubGlobal("fetch", vi.fn(async (input, options = {}) => { if (options.method) writes.push([String(input), options.method, options.body]); return response(options.method === "DELETE" ? null : { items: [item], total: 3978, page: 1, pageSize: 100, pages: 40 }); })); vi.stubGlobal("confirm", vi.fn(() => true)); });
+  beforeEach(() => { writes = []; vi.stubGlobal("fetch", vi.fn(async (input, options = {}) => { if (options.method) writes.push([String(input), options.method, options.body]); if (String(input) === "/api/prompt-options/config") return response({ generalNegativePrompt: "low quality", categories }); return response(options.method === "DELETE" ? null : { items: [item], total: 3978, page: 1, pageSize: 100, pages: 40 }); })); vi.stubGlobal("confirm", vi.fn(() => true)); });
   afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
   it("searches compact rows and edits an existing option", async () => {
@@ -28,5 +31,11 @@ describe("PromptOptionManager", () => {
     expect(screen.getByLabelText("词条 ID").value).toBe("oneboy_onegirl");
     fireEvent.change(screen.getByLabelText("中文名称"), { target: { value: "一男一女" } }); fireEvent.change(screen.getByLabelText("词条 Prompt"), { target: { value: "1boy, 1girl" } }); fireEvent.click(screen.getByRole("button", { name: "保存" }));
     await waitFor(() => expect(writes.some(([, method]) => method === "POST")).toBe(true));
+  });
+
+  it("offers every category in the updated catalog", async () => {
+    render(<PromptOptionManager onBack={vi.fn()} />); await screen.findByText("黑丝袜 / 黑色连裤袜");
+    const labels = [...screen.getByLabelText("筛选分类").options].map((option) => option.textContent);
+    expect(labels).toEqual(expect.arrayContaining(["身体", "束缚", "特征", "性行为", "性姿势"]));
   });
 });

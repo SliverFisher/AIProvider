@@ -1,12 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, FloppyDisk, Plus, Trash, Warning } from "@phosphor-icons/react";
-import { buildPromptCategories, PROMPT_CATEGORIES } from "./promptComposer";
+import { normalizePromptCategories } from "./promptComposer";
 import UiSearchField from "./UiSearchField";
 import { readJsonResponse } from "./apiResponse";
 import "./PromptOptionManager.css";
 
-const emptyDraft = () => ({ id: "", category: "Clothing", name: "", prompt: "", type: "positive", reverseId: "", sortOrder: 100, enabled: true, allowMultiple: true, persisted: false });
-const MULTIPLE_CATEGORIES = new Set(["Character", "Appearance", "Special", "Clothing", "Artist", "Relationship", "Action", "Composition", "Eyes", "Hair", "Background", "Lighting", "Style", "Quality"]);
+const emptyDraft = (definition) => ({ id: "", category: definition?.category || "", name: "", prompt: "", type: "positive", reverseId: "", sortOrder: 100, enabled: true, allowMultiple: Boolean(definition?.multiple), persisted: false });
 const PAGE_SIZE = 100;
 
 async function request(path, options) {
@@ -26,8 +25,8 @@ export default function PromptOptionManager({ onBack, initialCategory = "" }) {
   const [pages, setPages] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [definitions, setDefinitions] = useState([]);
   const latestLoad = useRef(0);
-  const definitions = useMemo(() => buildPromptCategories(PROMPT_CATEGORIES.map((item) => ({ category: item.category, allowMultiple: MULTIPLE_CATEGORIES.has(item.category) }))), []);
   const categoryByKey = useMemo(() => Object.fromEntries(definitions.map((item) => [item.category, item])), [definitions]);
 
   const load = async (preferredId, requestedPage = page) => {
@@ -45,6 +44,14 @@ export default function PromptOptionManager({ onBack, initialCategory = "" }) {
     const timer = window.setTimeout(() => load().catch((exception) => setError(exception.message)), query.trim() ? 300 : 0);
     return () => window.clearTimeout(timer);
   }, [page, query, category, status]);
+  useEffect(() => {
+    request("/api/prompt-options/config").then((config) => {
+      const next = normalizePromptCategories(config?.categories);
+      if (!next.length) throw new Error("Prompt 词条分类未配置");
+      setDefinitions(next);
+      setDraft((current) => current.category ? current : emptyDraft(next[0]));
+    }).catch((exception) => setError(exception.message));
+  }, []);
   const set = (key, value) => setDraft((current) => ({ ...current, [key]: value }));
   const changeCategory = (value) => setDraft((current) => ({ ...current, category: value, allowMultiple: current.type === "positive" && Boolean(categoryByKey[value]?.multiple) }));
   const changeType = (value) => setDraft((current) => ({ ...current, type: value, allowMultiple: value === "positive" && Boolean(categoryByKey[current.category]?.multiple), reverseId: value === "negative" ? "" : current.reverseId }));
@@ -59,14 +66,14 @@ export default function PromptOptionManager({ onBack, initialCategory = "" }) {
   const remove = async () => {
     if (!draft.persisted || !window.confirm(`删除词条“${draft.name}”？`)) return;
     setBusy(true); setError("");
-    try { await request(`/api/prompt-options/${draft.id}`, { method: "DELETE" }); setDraft(emptyDraft()); const nextPage = items.length === 1 ? Math.max(1, page - 1) : page; setPage(nextPage); await load(undefined, nextPage); }
+    try { await request(`/api/prompt-options/${draft.id}`, { method: "DELETE" }); setDraft(emptyDraft(definitions[0])); const nextPage = items.length === 1 ? Math.max(1, page - 1) : page; setPage(nextPage); await load(undefined, nextPage); }
     catch (exception) { setError(exception.message); } finally { setBusy(false); }
   };
   return <div className="prompt-option-manager">
     {error && <div className="prompt-option-error"><Warning />{error}<button onClick={() => setError("")}>×</button></div>}
     <header className="prompt-option-page-head">
       <div><button onClick={onBack}><ArrowLeft />返回 Prompt 方案</button><span>TERM LIBRARY</span><h2>Prompt 词条管理</h2><small>搜索、创建、编辑、停用或删除数据库词条</small></div>
-      <button className="primary" onClick={() => setDraft(emptyDraft())}><Plus />新建词条</button>
+      <button className="primary" onClick={() => setDraft(emptyDraft(definitions[0]))} disabled={!definitions.length}><Plus />新建词条</button>
     </header>
     <section className="prompt-option-workspace">
       <aside className="prompt-option-list">

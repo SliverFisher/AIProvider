@@ -21,7 +21,7 @@ import MediaViewer from "./MediaViewer";
 import WorkflowPanel from "./WorkflowPanel";
 import { generateId } from "./utils/generateId";
 import { applySchemeToWorkflow, createComfyProgressPlan, createWorkflowForm, describeComfyProgress, FALLBACK_FORM, findFinalOutput, getWorkflowFieldKeys, getWorkflowRevision, hasPromptSchemeContent, refreshWorkflowForm } from "./comfy/workbench";
-import { extractNegativeExtra, extractPositiveExtra, matchSelectedOptionsFromPrompt, normalizePrompt, PROMPT_CATEGORIES } from "./promptComposer";
+import { extractNegativeExtra, extractPositiveExtra, matchSelectedOptionsFromPrompt, normalizePrompt, normalizePromptCategories } from "./promptComposer";
 import { buildLuckyPrompts } from "./luckyPrompt";
 
 const BRIDGE = "http://127.0.0.1:32145";
@@ -416,6 +416,7 @@ export default function ComfyLocalWorkbench({ mode = "workbench", active = true 
     [selectedPresetId, setSelectedPresetId] = useState(""),
     [appliedPresetTitle, setAppliedPresetTitle] = useState("");
   const [promptOptions, setPromptOptions] = useState([]);
+  const [promptCategories, setPromptCategories] = useState([]);
   const [generalNegativePrompt, setGeneralNegativePrompt] = useState("");
   const [presetQuery, setPresetQuery] = useState("");
   const [presetSaveName, setPresetSaveName] = useState("");
@@ -823,6 +824,9 @@ export default function ComfyLocalWorkbench({ mode = "workbench", active = true 
     fetch("/api/prompt-options/config").then((response) => readJson(response, "Prompt 配置接口").then((data) => {
       if (!response.ok || data.code !== 200) throw new Error(data.message || "读取 Prompt 配置失败");
       setGeneralNegativePrompt(data.data?.generalNegativePrompt || "");
+      const categories = normalizePromptCategories(data.data?.categories);
+      if (!categories.length) throw new Error("Prompt 词条分类未配置");
+      setPromptCategories(categories);
     })).catch((e) => setError(e.message));
   }, [active, mode]);
   useEffect(() => {
@@ -912,7 +916,7 @@ export default function ComfyLocalWorkbench({ mode = "workbench", active = true 
       const promptMode = mode === "overwrite" ? selected.promptMode : (form.promptMode === "prose" ? "prose" : "tags");
       if (promptMode !== "tags" && promptMode !== "prose") throw new Error("Prompt 方案类型无效，请重新加载方案");
       const matchedOptions = promptMode === "tags" ? await analyzePromptOptions(form.positivePrompt, form.negativePrompt) : [];
-      const mappedSelections = promptMode === "tags" ? matchSelectedOptionsFromPrompt(form.positivePrompt, matchedOptions, PROMPT_CATEGORIES) : {};
+      const mappedSelections = promptMode === "tags" ? matchSelectedOptionsFromPrompt(form.positivePrompt, matchedOptions, promptCategories) : {};
       const mappedPositiveExtra = promptMode === "tags" ? extractPositiveExtra(form.positivePrompt, mappedSelections, matchedOptions) : "";
       const mappedNegativeExtra = promptMode === "tags" ? extractNegativeExtra(form.negativePrompt, mappedSelections, matchedOptions, generalNegativePrompt) : "";
       const response = await fetch(mode === "new" ? "/api/comfy-presets" : `/api/comfy-presets/${selected.id}`, {
@@ -3034,6 +3038,7 @@ export default function ComfyLocalWorkbench({ mode = "workbench", active = true 
             loraModels={loraModels} loraModelsLoading={loraModelsLoading}
             mainModels={mainModels} mainModelsLoading={mainModelsLoading}
             promptOptions={promptOptions}
+            promptCategories={promptCategories}
             onPromptOptionsReload={analyzeCurrentPromptOptions}
             onPromptOptionsQuery={queryPromptOptions}
             presets={presets} presetQuery={presetQuery} onPresetChange={choosePreset}

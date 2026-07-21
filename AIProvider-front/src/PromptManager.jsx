@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Copy, FloppyDisk, Plus, Star, Translate, Trash, Warning, X } from "@phosphor-icons/react";
-import { PROMPT_CATEGORIES, composePrompts, emptySelectedOptions, extractNegativeExtra, extractPositiveExtra, normalizePrompt, relatedNegativePromptsForPositive, normalizeSelectedOptions } from "./promptComposer";
+import { composePrompts, emptySelectedOptions, extractNegativeExtra, extractPositiveExtra, normalizePrompt, normalizePromptCategories, relatedNegativePromptsForPositive, normalizeSelectedOptions } from "./promptComposer";
 import UiSearchField from "./UiSearchField";
 import { readJsonResponse } from "./apiResponse";
 import "./PromptManager.css";
@@ -23,9 +23,6 @@ function normalizePreset(item, definitions) {
 }
 
 const OPTION_PAGE_SIZE = 100;
-const MULTIPLE_CATEGORIES = new Set(["Character", "Appearance", "Special", "Clothing", "Artist", "Relationship", "Action", "Composition", "Eyes", "Hair", "Background", "Lighting", "Style", "Quality"]);
-const DEFINITIONS = PROMPT_CATEGORIES.map((definition) => ({ ...definition, multiple: MULTIPLE_CATEGORIES.has(definition.category) }));
-
 function MultiOptionPicker({ definition, options, value, onChange, onEditOptions, onOpen, loading }) {
   const rootRef = useRef(null);
   const [query, setQuery] = useState("");
@@ -64,7 +61,7 @@ function SingleOptionPicker({ definition, options, value, onChange, onEditOption
 
 export default function PromptManager({ onEditOptions }) {
   const [items, setItems] = useState([]);
-  const [catalog, setCatalog] = useState({ options: [], generalNegativePrompt: "" });
+  const [catalog, setCatalog] = useState({ options: [], categories: [], generalNegativePrompt: "" });
   const [query, setQuery] = useState("");
   const [modeFilter, setModeFilter] = useState("all");
   const [draft, setDraft] = useState(emptyDraft);
@@ -79,8 +76,9 @@ export default function PromptManager({ onEditOptions }) {
   const loadedCategories = useRef(new Set());
   const categoryLoads = useRef(new Map());
   const latestGlobalSearch = useRef(0);
+  const definitions = useMemo(() => normalizePromptCategories(catalog.categories), [catalog.categories]);
   const filtered = useMemo(() => items.filter((item) => (modeFilter === "all" || item.promptMode === modeFilter) && item.name.toLowerCase().includes(query.trim().toLowerCase())), [items, modeFilter, query]);
-  const optionsByCategory = useMemo(() => Object.fromEntries(DEFINITIONS.map(({ category }) => [category, catalog.options.filter((option) => option.category === category && option.type !== "negative")])), [catalog.options]);
+  const optionsByCategory = useMemo(() => Object.fromEntries(definitions.map(({ category }) => [category, catalog.options.filter((option) => option.category === category && option.type !== "negative")])), [catalog.options, definitions]);
 
   const call = useCallback(async (path, options = {}) => {
     const controller = new AbortController();
@@ -98,18 +96,18 @@ export default function PromptManager({ onEditOptions }) {
     if (!ids.length) return;
     mergeOptions(await call("/api/prompt-options/resolve", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(ids) }));
   }, [call, mergeOptions]);
-  const select = useCallback((item) => {
-    setDraft(normalizePreset(item, DEFINITIONS));
+  const select = useCallback((item, categoryDefinitions = definitions) => {
+    setDraft(normalizePreset(item, categoryDefinitions));
     setTranslation(null);
     resolveSelections(item).catch((exception) => { if (exception.name !== "AbortError") setError(exception.message); });
-  }, [resolveSelections]);
-  const load = useCallback(async (preferredId) => {
+  }, [definitions, resolveSelections]);
+  const load = useCallback(async (preferredId, categoryDefinitions = definitions) => {
     const next = await call("/api/comfy-presets");
     setItems(next || []);
     const queryId = new URLSearchParams(window.location.search).get("edit");
     const selected = next?.find((item) => String(item.id) === String(preferredId ?? queryId)) || next?.find((item) => item.isDefault) || next?.[0];
-    if (selected) select(selected); else setDraft(emptyDraft(DEFINITIONS));
-  }, [call, select]);
+    if (selected) select(selected, categoryDefinitions); else setDraft(emptyDraft(categoryDefinitions));
+  }, [call, definitions, select]);
   const loadCategory = useCallback((category) => {
     if (loadedCategories.current.has(category)) return Promise.resolve();
     if (categoryLoads.current.has(category)) return categoryLoads.current.get(category);
@@ -132,10 +130,14 @@ export default function PromptManager({ onEditOptions }) {
 
   useEffect(() => {
     const controllers = requestControllers.current;
-    call("/api/prompt-options/config").then((config) => setCatalog((current) => ({ ...current, generalNegativePrompt: config?.generalNegativePrompt || "" }))).catch((exception) => { if (exception.name !== "AbortError") setError(exception.message); });
-    load().catch((exception) => { if (exception.name !== "AbortError") setError(exception.message); });
+    call("/api/prompt-options/config").then((config) => {
+      const nextDefinitions = normalizePromptCategories(config?.categories);
+      if (!nextDefinitions.length) throw new Error("Prompt 词条分类未配置");
+      setCatalog((current) => ({ ...current, categories: config.categories, generalNegativePrompt: config.generalNegativePrompt || "" }));
+      return load(undefined, nextDefinitions);
+    }).catch((exception) => { if (exception.name !== "AbortError") setError(exception.message); });
     return () => { controllers.forEach((controller) => controller.abort()); controllers.clear(); };
-  }, [call, load]);
+  }, [call]);
   useEffect(() => {
     const keyword = globalOptionQuery.trim();
     const searchId = ++latestGlobalSearch.current;
@@ -157,7 +159,7 @@ export default function PromptManager({ onEditOptions }) {
   const setFinalNegativePrompt = (value) => setDraft((current) => ({ ...current, negativePrompt: value, negativeExtra: extractNegativeExtra(value, current.selectedOptions, catalog.options, catalog.generalNegativePrompt) }));
   const regenerate = (current, patch) => {
     const next = { ...current, ...patch };
-    return { ...next, ...composePrompts(next.selectedOptions, catalog.options, catalog.generalNegativePrompt, next.positiveExtra, next.negativeExtra, DEFINITIONS) };
+    return { ...next, ...composePrompts(next.selectedOptions, catalog.options, catalog.generalNegativePrompt, next.positiveExtra, next.negativeExtra, definitions) };
   };
   const setSelection = (key, value) => setDraft((current) => regenerate(current, { selectedOptions: { ...current.selectedOptions, [key]: value } }));
   const setExtra = (key, value) => setDraft((current) => regenerate(current, { [key]: value }));
@@ -199,8 +201,8 @@ export default function PromptManager({ onEditOptions }) {
     try { await call(`/api/comfy-presets/${item.id}/default`, { method: item.isDefault ? "DELETE" : "POST" }); await load(item.id); }
     catch (exception) { setError(exception.message); } finally { setBusy(false); }
   };
-  const createNew = () => { setDraft(emptyDraft(DEFINITIONS)); setTranslation(null); };
-  const duplicate = () => setDraft({ ...draft, id: null, name: `${draft.name || "未命名方案"} - 副本`, isDefault: false, selectedOptions: normalizeSelectedOptions(draft.selectedOptions, DEFINITIONS) });
+  const createNew = () => { setDraft(emptyDraft(definitions)); setTranslation(null); };
+  const duplicate = () => setDraft({ ...draft, id: null, name: `${draft.name || "未命名方案"} - 副本`, isDefault: false, selectedOptions: normalizeSelectedOptions(draft.selectedOptions, definitions) });
 
   return <div className="prompt-manager">
     {error && <div className="prompt-manager-error"><Warning />{error}<button onClick={() => setError("")}>×</button></div>}
@@ -233,8 +235,8 @@ export default function PromptManager({ onEditOptions }) {
         {draft.promptMode === "tags" ? <>
         <section className="prompt-composer">
           <header><div><h3>Prompt 组合器</h3><small>词条来自数据库配置；修改选择后自动重建最终 Prompt</small></div><span>{Object.values(draft.selectedOptions).flat().length} 项</span></header>
-          <UiSearchField className="prompt-option-search prompt-global-search" aria-label="全局搜索 Prompt 词条" value={globalOptionQuery} onChange={(event) => setGlobalOptionQuery(event.target.value)} placeholder="搜索中文、英文或词条 ID"><div className="prompt-global-search-results">{globalOptionQuery.trim() && globalOptionResults.map((option) => { const definition = DEFINITIONS.find((item) => item.category === option.category); const selected = draft.selectedOptions?.[option.category]?.includes(option.id); return <button type="button" key={option.id} className={selected ? "is-selected" : ""} onClick={() => { const current = draft.selectedOptions?.[option.category] || []; const next = definition?.multiple ? (current.includes(option.id) ? current : [...current, option.id]) : [option.id]; setSelection(option.category, next); setGlobalOptionQuery(""); window.setTimeout(() => document.querySelector(`[data-prompt-category="${CSS.escape(option.category)}"]`)?.scrollIntoView({ behavior: "smooth", block: "center" }), 0); }}><span><strong>{option.name}</strong><small>{definition?.label || option.category} · {option.positivePrompt}</small></span>{selected && <span>已选</span>}</button>})}{globalOptionQuery.trim() && !globalOptionResults.length && <p>没有匹配词条</p>}</div></UiSearchField>
-          <div className="prompt-category-grid">{DEFINITIONS.map((definition) => {
+          <UiSearchField className="prompt-option-search prompt-global-search" aria-label="全局搜索 Prompt 词条" value={globalOptionQuery} onChange={(event) => setGlobalOptionQuery(event.target.value)} placeholder="搜索中文、英文或词条 ID"><div className="prompt-global-search-results">{globalOptionQuery.trim() && globalOptionResults.map((option) => { const definition = definitions.find((item) => item.category === option.category); const selected = draft.selectedOptions?.[option.category]?.includes(option.id); return <button type="button" key={option.id} className={selected ? "is-selected" : ""} onClick={() => { const current = draft.selectedOptions?.[option.category] || []; const next = definition?.multiple ? (current.includes(option.id) ? current : [...current, option.id]) : [option.id]; setSelection(option.category, next); setGlobalOptionQuery(""); window.setTimeout(() => document.querySelector(`[data-prompt-category="${CSS.escape(option.category)}"]`)?.scrollIntoView({ behavior: "smooth", block: "center" }), 0); }}><span><strong>{option.name}</strong><small>{definition?.label || option.category} · {option.positivePrompt}</small></span>{selected && <span>已选</span>}</button>})}{globalOptionQuery.trim() && !globalOptionResults.length && <p>没有匹配词条</p>}</div></UiSearchField>
+          <div className="prompt-category-grid">{definitions.map((definition) => {
             const props = { definition, options: optionsByCategory[definition.category] || [], value: draft.selectedOptions[definition.key], onChange: (value) => setSelection(definition.key, value), onEditOptions, onOpen: () => loadCategory(definition.category).catch((exception) => { if (exception.name !== "AbortError") setError(exception.message); }), loading: Boolean(categoryLoading[definition.category]) };
             return definition.multiple ? <div key={definition.key} data-prompt-category={definition.category}><MultiOptionPicker {...props} /></div> : <div key={definition.key} data-prompt-category={definition.category}><SingleOptionPicker {...props} /></div>;
           })}</div>

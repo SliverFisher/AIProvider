@@ -175,7 +175,11 @@ describe("Comfy image generation flow", () => {
       if (url.endsWith("/api/local-workflows")) return json({ directory: "F:\\ComfyUI\\user\\default\\workflows", workflows: [workflow, workflow2, cutoutWorkflow, interactiveWorkflow], rejected: [] });
       if (url.endsWith("/api/lora-models")) return json({ models: [] });
       if (url.includes("/api/main-models?")) return json({ models: [{ name: "flux\\dev.safetensors", displayName: "dev" }] });
-      if (url === "/api/prompt-options/config") return json({ code: 200, data: { generalNegativePrompt: "" } });
+      if (url === "/api/prompt-options/config") return json({ code: 200, data: { generalNegativePrompt: "", categories: [
+        { category: "Character", label: "人物", sortOrder: 1, multiple: true },
+        { category: "Clothing", label: "服装", sortOrder: 2, multiple: true },
+        { category: "Quality", label: "画质词", sortOrder: 3, multiple: true },
+      ] } });
       if (url === "/api/prompt-options/analyze") return json({ code: 200, data: [] });
       if (url.startsWith("/api/prompt-options?")) return json({ code: 200, data: { items: [], total: 0, pages: 0, page: 1, pageSize: 100 } });
       if (url.includes("/api/comfy-presets")) return json({ code: 200, data: [{ id: 2, name: "扶她0", promptMode: "tags", isDefault: presetIsDefault, selectedOptions: { characterCount: [], characterTypes: [], relationships: [], actions: [], clothing: [], expression: [], pose: [], cameraAngle: [], shotType: [], scene: [], composition: [], quality: [] }, positiveExtra: "", negativeExtra: "", positivePrompt: presetPositivePrompt, negativePrompt: "preset negative", remark: "" }, { id: 3, name: "Flux 长文", promptMode: "prose", isDefault: false, selectedOptions: {}, positiveExtra: "", negativeExtra: "", positivePrompt: "A cinematic rainy street with a woman holding a silver umbrella.", negativePrompt: "No letters or watermark.", remark: "" }] });

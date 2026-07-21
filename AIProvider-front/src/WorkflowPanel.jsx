@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import "./WorkflowPanel.css";
 import MaskPointEditor from "./MaskPointEditor";
 import UiSearchField from "./UiSearchField";
-import { normalizePrompt, PROMPT_CATEGORIES } from "./promptComposer";
+import { normalizePrompt } from "./promptComposer";
 import { getPromptTranslationService } from "./promptTranslationService";
 
 const LABELS = {
@@ -178,7 +178,7 @@ function WorkflowField({ fieldKey, fieldSpec, value, referenceFile, onReference,
   return <label>{label}<input aria-label={label} value={value ?? ""} onChange={(event) => onChange(fieldKey, event.target.value)} /></label>;
 }
 
-export default function WorkflowPanel({ workflows, loading, workflow, fieldKeys, fieldSpecs, values, onWorkflowChange, onFieldChange, onPromptModeChange, referenceFiles, onReference, onReferenceDrop, loraModels, loraModelsLoading, mainModels, mainModelsLoading, promptOptions = [], onPromptOptionsReload, onPromptOptionsQuery, presets, presetQuery, onPresetChange, presetSaveName, onPresetSaveNameChange, onSavePreset, onReloadPreset, onEditPreset, presetSaving, presetReloading, onLuckyGenerate, luckyLoading, onBatchGenerate, onGenerate, disabled }) {
+export default function WorkflowPanel({ workflows, loading, workflow, fieldKeys, fieldSpecs, values, onWorkflowChange, onFieldChange, onPromptModeChange, referenceFiles, onReference, onReferenceDrop, loraModels, loraModelsLoading, mainModels, mainModelsLoading, promptOptions = [], promptCategories = [], onPromptOptionsReload, onPromptOptionsQuery, presets, presetQuery, onPresetChange, presetSaveName, onPresetSaveNameChange, onSavePreset, onReloadPreset, onEditPreset, presetSaving, presetReloading, onLuckyGenerate, luckyLoading, onBatchGenerate, onGenerate, disabled }) {
   const [promptEditing, setPromptEditing] = useState({ positivePrompt: false, negativePrompt: false });
   const [promptTermQuery, setPromptTermQuery] = useState("");
   const [negativeTermQuery, setNegativeTermQuery] = useState("");
@@ -186,7 +186,7 @@ export default function WorkflowPanel({ workflows, loading, workflow, fieldKeys,
   const [negativeTermCategory, setNegativeTermCategory] = useState("");
   const [promptTermOpen, setPromptTermOpen] = useState({ positivePrompt: false, negativePrompt: false });
   const [promptLanguage, setPromptLanguage] = useState("en");
-  const [quickDrafts, setQuickDrafts] = useState({ positivePrompt: { category: "Clothing", name: "", prompt: "" }, negativePrompt: { category: "Quality", name: "", prompt: "" } });
+  const [quickDrafts, setQuickDrafts] = useState({ positivePrompt: { category: "", name: "", prompt: "" }, negativePrompt: { category: "", name: "", prompt: "" } });
   const [quickSaving, setQuickSaving] = useState("");
   const [quickError, setQuickError] = useState("");
   const [disabledPromptTerms, setDisabledPromptTerms] = useState({ positivePrompt: [], negativePrompt: [] });
@@ -234,10 +234,15 @@ export default function WorkflowPanel({ workflows, loading, workflow, fieldKeys,
     if (!keyword && !negativeTermCategory) return [];
     return promptOptions.filter((option) => option.type === "negative" && (!negativeTermCategory || option.category === negativeTermCategory) && (!keyword || [option.name, option.prompt, option.negativePrompt, option.id].filter(Boolean).join(" ").toLocaleLowerCase("zh-CN").includes(keyword))).slice(0, 50);
   }, [promptOptions, negativeTermCategory, negativeTermQuery]);
-  const batchCategories = PROMPT_CATEGORIES;
+  const batchCategories = promptCategories;
   const batchCategoryOptions = useMemo(() => promptOptions
     .filter((option) => option.category === batchDialog.category && (option.prompt || option.positivePrompt || option.negativePrompt))
     .sort((left, right) => Number(left.sortOrder ?? 0) - Number(right.sortOrder ?? 0) || String(left.name || left.id).localeCompare(String(right.name || right.id), "zh-CN")), [batchDialog.category, promptOptions]);
+  useEffect(() => {
+    const first = promptCategories[0]?.category || "";
+    if (!first) return;
+    setQuickDrafts((current) => Object.fromEntries(Object.entries(current).map(([key, draft]) => [key, promptCategories.some((item) => item.category === draft.category) ? draft : { ...draft, category: first }])));
+  }, [promptCategories]);
   const supportsPrompt = fieldKeys.includes("positivePrompt") || fieldKeys.includes("negativePrompt");
   useEffect(() => { setProseTranslation(null); setProseTranslationError(""); }, [activePromptMode, values.negativePrompt, values.positivePrompt]);
   const translateProse = async () => {
@@ -345,7 +350,7 @@ export default function WorkflowPanel({ workflows, loading, workflow, fieldKeys,
     return <div className="workflow-prompt-term-picker" onFocus={() => setOpen(true)} onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false); }} onKeyDown={(event) => { if (event.key === "Escape") { event.preventDefault(); setOpen(false); } }}>
       <select aria-label={`筛选${positive ? "正向" : "反向"} Prompt 词条分类`} value={category} onChange={(event) => { setCategory(event.target.value); setOpen(true); }}>
         <option value="">全部分类</option>
-        {PROMPT_CATEGORIES.map((item) => <option key={item.category} value={item.category}>{item.label}</option>)}
+        {promptCategories.map((item) => <option key={item.category} value={item.category}>{item.label}</option>)}
       </select>
       <UiSearchField className="workflow-prompt-term-search" aria-label={`搜索并添加${positive ? "正向" : "反向"} Prompt 词条`} value={query} onChange={(event) => { setQuery(event.target.value); setOpen(true); }} placeholder={`搜索${positive ? "正向" : "反向"}词条并添加…`}>{open && <div className="workflow-prompt-term-results">{results.map((option) => <button type="button" key={option.id} onClick={() => addPromptTerm(option, target)}><strong>{option.name}</strong><small>{option.prompt || (positive ? option.positivePrompt : option.negativePrompt)}</small><Plus /></button>)}{!results.length && <span>没有匹配词条</span>}</div>}</UiSearchField>
     </div>;
@@ -358,8 +363,8 @@ export default function WorkflowPanel({ workflows, loading, workflow, fieldKeys,
     if (!name || !prompt || quickSaving) return;
     const type = target === "positivePrompt" ? "positive" : "negative";
     const slug = prompt.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 30) || "term";
-    const positiveDefinition = promptOptions.find((option) => option.type !== "negative" && option.category === draft.category);
-    const payload = { id: `custom_${type[0]}_${Date.now().toString(36)}_${slug}`.slice(0, 64), category: draft.category, name, prompt, type, reverseId: null, sortOrder: 10000, enabled: true, allowMultiple: type === "positive" && Boolean(positiveDefinition?.allowMultiple) };
+    const categoryDefinition = promptCategories.find((item) => item.category === draft.category);
+    const payload = { id: `custom_${type[0]}_${Date.now().toString(36)}_${slug}`.slice(0, 64), category: draft.category, name, prompt, type, reverseId: null, sortOrder: 10000, enabled: true, allowMultiple: type === "positive" && Boolean(categoryDefinition?.multiple) };
     setQuickSaving(target); setQuickError("");
     try {
       const response = await fetch("/api/prompt-options", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
@@ -381,8 +386,8 @@ export default function WorkflowPanel({ workflows, loading, workflow, fieldKeys,
     event.preventDefault();
     if (!chipEditDraft || chipEditSaving) return;
     const draft = chipEditDraft;
-    const positiveDefinition = promptOptions.find((option) => option.type !== "negative" && option.category === draft.category);
-    const payload = { id: draft.id, category: draft.category, name: draft.name.trim(), prompt: draft.prompt.trim(), type: draft.type, reverseId: draft.type === "positive" ? (draft.reverseId || null) : null, sortOrder: Number(draft.sortOrder), enabled: draft.enabled, allowMultiple: draft.type === "positive" && Boolean(positiveDefinition?.allowMultiple ?? draft.allowMultiple) };
+    const categoryDefinition = promptCategories.find((item) => item.category === draft.category);
+    const payload = { id: draft.id, category: draft.category, name: draft.name.trim(), prompt: draft.prompt.trim(), type: draft.type, reverseId: draft.type === "positive" ? (draft.reverseId || null) : null, sortOrder: Number(draft.sortOrder), enabled: draft.enabled, allowMultiple: draft.type === "positive" && Boolean(categoryDefinition?.multiple) };
     if (!payload.name || !payload.prompt) return;
     setChipEditSaving(true); setQuickError("");
     try {
@@ -419,7 +424,7 @@ export default function WorkflowPanel({ workflows, loading, workflow, fieldKeys,
     const positive = target === "positivePrompt";
     const draft = quickDrafts[target];
     return <form className={`workflow-panel__quick-option ${positive ? "is-positive" : "is-negative"}`} onSubmit={(event) => saveQuickPromptOption(event, target)}>
-      <select aria-label={`${positive ? "正向" : "反向"}词条分类`} value={draft.category} onChange={(event) => updateQuickDraft(target, "category", event.target.value)}>{PROMPT_CATEGORIES.map((item) => <option key={item.category} value={item.category}>{item.label}</option>)}</select>
+      <select aria-label={`${positive ? "正向" : "反向"}词条分类`} value={draft.category} onChange={(event) => updateQuickDraft(target, "category", event.target.value)}>{promptCategories.map((item) => <option key={item.category} value={item.category}>{item.label}</option>)}</select>
       <input aria-label={`${positive ? "正向" : "反向"}词条中文名称`} value={draft.name} maxLength="100" onChange={(event) => updateQuickDraft(target, "name", event.target.value)} placeholder="中文名称" />
       <input aria-label={`${positive ? "正向" : "反向"}词条英文 Prompt`} value={draft.prompt} maxLength="500" onChange={(event) => updateQuickDraft(target, "prompt", event.target.value)} placeholder="英文 Prompt" />
       <button type="submit" aria-label={`添加${positive ? "正向" : "反向"}词条`} disabled={quickSaving === target || !draft.name.trim() || !draft.prompt.trim()}><Plus />{quickSaving === target ? "保存中" : "添加"}</button>
@@ -440,7 +445,7 @@ export default function WorkflowPanel({ workflows, loading, workflow, fieldKeys,
   };
   return <div className="workflow-panel" onMouseDown={() => chipContextMenu && setChipContextMenu(null)}>
     {chipContextMenu && <div className="workflow-panel__chip-context-menu" style={{ left: chipContextMenu.x, top: chipContextMenu.y }} onMouseDown={(event) => event.stopPropagation()}><button type="button" onClick={openChipEdit}>编辑</button></div>}
-    {chipEditDraft && <div className="workflow-panel__chip-edit-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && !chipEditSaving && setChipEditDraft(null)}><form className="workflow-panel__chip-edit-dialog" role="dialog" aria-modal="true" aria-labelledby="chip-edit-title" onSubmit={saveChipEdit}><header><div><span>EDIT TERM</span><h3 id="chip-edit-title">编辑结构化词条</h3></div><button type="button" aria-label="关闭词条编辑" disabled={chipEditSaving} onClick={() => setChipEditDraft(null)}><X /></button></header><label>分类<select aria-label="编辑词条分类" value={chipEditDraft.category} onChange={(event) => setChipEditDraft((current) => ({ ...current, category: event.target.value }))}>{PROMPT_CATEGORIES.map((item) => <option key={item.category} value={item.category}>{item.label}</option>)}</select></label><label>中文名称<input aria-label="编辑词条中文名称" value={chipEditDraft.name} onChange={(event) => setChipEditDraft((current) => ({ ...current, name: event.target.value }))} /></label><label>英文 Prompt<input aria-label="编辑词条英文 Prompt" value={chipEditDraft.prompt} onChange={(event) => setChipEditDraft((current) => ({ ...current, prompt: event.target.value }))} /></label><footer><button type="button" disabled={chipEditSaving} onClick={() => setChipEditDraft(null)}>取消</button><button className="primary" type="submit" disabled={chipEditSaving || !chipEditDraft.name.trim() || !chipEditDraft.prompt.trim()}><FloppyDisk />{chipEditSaving ? "保存中" : "保存"}</button></footer></form></div>}
+    {chipEditDraft && <div className="workflow-panel__chip-edit-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && !chipEditSaving && setChipEditDraft(null)}><form className="workflow-panel__chip-edit-dialog" role="dialog" aria-modal="true" aria-labelledby="chip-edit-title" onSubmit={saveChipEdit}><header><div><span>EDIT TERM</span><h3 id="chip-edit-title">编辑结构化词条</h3></div><button type="button" aria-label="关闭词条编辑" disabled={chipEditSaving} onClick={() => setChipEditDraft(null)}><X /></button></header><label>分类<select aria-label="编辑词条分类" value={chipEditDraft.category} onChange={(event) => setChipEditDraft((current) => ({ ...current, category: event.target.value }))}>{promptCategories.map((item) => <option key={item.category} value={item.category}>{item.label}</option>)}</select></label><label>中文名称<input aria-label="编辑词条中文名称" value={chipEditDraft.name} onChange={(event) => setChipEditDraft((current) => ({ ...current, name: event.target.value }))} /></label><label>英文 Prompt<input aria-label="编辑词条英文 Prompt" value={chipEditDraft.prompt} onChange={(event) => setChipEditDraft((current) => ({ ...current, prompt: event.target.value }))} /></label><footer><button type="button" disabled={chipEditSaving} onClick={() => setChipEditDraft(null)}>取消</button><button className="primary" type="submit" disabled={chipEditSaving || !chipEditDraft.name.trim() || !chipEditDraft.prompt.trim()}><FloppyDisk />{chipEditSaving ? "保存中" : "保存"}</button></footer></form></div>}
     <section className="workflow-panel__chooser" aria-label="选择工作流">
       <div className="workflow-panel__chooser-main">
         <select aria-label="当前生成工作流" value={workflow?.id || ""} onChange={(event) => onWorkflowChange(event.target.value)}>

@@ -215,6 +215,7 @@ describe("WorkflowPanel generation action", () => {
     render(<WorkflowPanel workflows={[{ id: "wf", name: "测试工作流" }]} workflow={{ id: "wf", name: "测试工作流", capabilities: {} }}
       fieldKeys={["positivePrompt", "negativePrompt"]} fieldSpecs={{ positivePrompt: {}, negativePrompt: {} }}
       values={{ positivePrompt: "standing", negativePrompt: "bad hands" }} referenceFiles={{}} promptOptions={[{ category: "Clothing", type: "positive", allowMultiple: true }]}
+      promptCategories={[{ key: "Clothing", category: "Clothing", label: "服装", sortOrder: 1, multiple: true }, { key: "Quality", category: "Quality", label: "画质词", sortOrder: 2, multiple: true }]}
       presets={[]} presetQuery="" disabled={{ blocked: false, busy: false }} loading={false}
       onWorkflowChange={vi.fn()} onFieldChange={change} onReference={vi.fn()} onPresetChange={vi.fn()} onGenerate={vi.fn()} />);
     fireEvent.click(screen.getAllByRole("button", { name: "手动编辑" })[0]);
@@ -226,6 +227,7 @@ describe("WorkflowPanel generation action", () => {
     await vi.waitFor(() => expect(change).toHaveBeenCalledWith("positivePrompt", "standing, silver hair"));
     const buttons = screen.getAllByRole("button", { name: "手动编辑" });
     fireEvent.click(buttons[buttons.length - 1]);
+    fireEvent.change(screen.getByLabelText("反向词条分类"), { target: { value: "Quality" } });
     fireEvent.change(screen.getByLabelText("反向词条中文名称"), { target: { value: "水印" } });
     fireEvent.change(screen.getByLabelText("反向词条英文 Prompt"), { target: { value: "watermark" } });
     fireEvent.click(screen.getByRole("button", { name: "添加反向词条" }));

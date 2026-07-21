@@ -22,6 +22,7 @@ class PromptOptionServiceTest {
         assertThat(service.analyze("black stockings, standing", "")).singleElement().satisfies(item -> assertThat(item.getId()).isEqualTo("black_stockings"));
         when(repository.findGeneralNegativePrompt()).thenReturn(" low quality ");
         assertThat(service.config()).containsEntry("generalNegativePrompt", "low quality");
+        assertThat((List<?>) service.config().get("categories")).hasSize(1);
         PromptOptionDTO dto = valid(); service.create(dto); verify(repository).insertOption(any(PromptCatalogMapper.OptionRecord.class));
         when(repository.updateOption(any())).thenReturn(true); service.update(dto.getId(), dto);
         when(repository.countSchemeReferences(dto.getId())).thenReturn(0); when(repository.deleteOption(dto.getId())).thenReturn(true); service.delete(dto.getId());
@@ -33,6 +34,8 @@ class PromptOptionServiceTest {
         when(repository.countOptions("丝袜", "Clothing", true, "positive")).thenReturn(123L);
         assertThat(service.page(" 丝袜 ", "Clothing", "enabled", "positive", 2, 50).getPages()).isEqualTo(3);
         verify(repository).findOptionPage("丝袜", "Clothing", true, "positive", 50, 50);
+        service.page(null, "Sex Position", "all", null, 1, 100);
+        verify(repository).findOptionPage(null, "Sex Position", null, null, 100, 0);
         assertThatThrownBy(() -> service.page(null, null, "all", null, 1, 101)).hasMessageContaining("pageSize");
         assertThatThrownBy(() -> service.page(null, null, "unknown", null, 1, 20)).hasMessageContaining("status");
     }
@@ -60,6 +63,9 @@ class PromptOptionServiceTest {
     }
 
     private PromptOptionService service(PromptCatalogRepository repository) {
+        Map<String,Object> category = new HashMap<>(); category.put("category", "Clothing"); category.put("name", "服装"); category.put("sortOrder", 1); category.put("allowMultiple", true);
+        lenient().when(repository.findEnabledCategory(anyString())).thenReturn(category);
+        lenient().when(repository.findEnabledCategories()).thenReturn(Collections.singletonList(category));
         return new PromptOptionService(repository, mock(PromptTranslationService.class));
     }
 

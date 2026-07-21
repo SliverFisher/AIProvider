@@ -7,6 +7,12 @@ import java.util.Map;
 
 @Mapper
 public interface PromptCatalogMapper {
+    @Select("SELECT Category category, Name name, SortOrder sortOrder, AllowMultiple allowMultiple FROM c_PromptOptionCategories WHERE Enabled=TRUE ORDER BY SortOrder, Category")
+    List<Map<String, Object>> findEnabledCategories();
+
+    @Select("SELECT Category category, Name name, SortOrder sortOrder, AllowMultiple allowMultiple FROM c_PromptOptionCategories WHERE Category=#{category} AND Enabled=TRUE")
+    Map<String, Object> findEnabledCategory(String category);
+
     @Select("SELECT p.Id id, p.Category category, p.Name name, p.Prompt prompt, p.Type type, p.ReverseId reverseId, p.Prompt positivePrompt, n.Prompt negativePrompt, p.SortOrder sortOrder, p.Enabled enabled, p.AllowMultiple allowMultiple FROM c_PromptOptions p LEFT JOIN c_PromptOptions n ON n.Id=p.ReverseId AND n.Type='negative' WHERE p.Enabled=TRUE AND p.Type='positive' ORDER BY p.Category, p.SortOrder, p.Id")
     List<Map<String, Object>> findEnabledOptions();
 

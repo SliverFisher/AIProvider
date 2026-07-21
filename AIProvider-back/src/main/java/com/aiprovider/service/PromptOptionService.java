@@ -4,6 +4,7 @@ import com.aiprovider.mapper.PromptCatalogMapper;
 import com.aiprovider.model.dto.PromptOptionDTO;
 import com.aiprovider.model.vo.PromptOptionVO;
 import com.aiprovider.model.vo.PromptOptionPageVO;
+import com.aiprovider.model.vo.PromptOptionCategoryVO;
 import com.aiprovider.repository.PromptCatalogRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -17,8 +18,6 @@ import java.util.regex.Pattern;
 public class PromptOptionService {
     private static final Logger log = LoggerFactory.getLogger(PromptOptionService.class);
     private static final Pattern ID_PATTERN = Pattern.compile("[a-z0-9][a-z0-9_]{0,63}");
-    private static final Set<String> MULTIPLE_CATEGORIES = Set.of("Character", "Appearance", "Special", "Clothing", "Artist", "Relationship", "Action", "Composition", "Eyes", "Hair", "Background", "Lighting", "Style", "Quality");
-    private static final Set<String> CATEGORIES = Set.of("Action", "Appearance", "Artist", "Background", "Camera", "Character", "Clothing", "Composition", "Expression", "Eyes", "Hair", "Lighting", "Pose", "Quality", "Relationship", "Special", "Style");
     private final PromptCatalogRepository repository;
     private final PromptTranslationService translationService;
 
@@ -31,8 +30,8 @@ public class PromptOptionService {
         if (page < 1) throw new IllegalArgumentException("page 必须大于等于 1");
         if (pageSize < 1 || pageSize > 100) throw new IllegalArgumentException("pageSize 必须在 1 到 100 之间");
         String normalizedQuery = optional(query, "搜索词", 100);
-        String normalizedCategory = optional(category, "分类", 32);
-        if (normalizedCategory != null && !CATEGORIES.contains(normalizedCategory)) throw new IllegalArgumentException("词条分类无效");
+        String normalizedCategory = optional(category, "分类", 40);
+        if (normalizedCategory != null) requireCategory(normalizedCategory);
         String normalizedStatus = status == null ? "all" : status.trim().toLowerCase(Locale.ROOT);
         Boolean enabled;
         if ("all".equals(normalizedStatus)) enabled = null;
@@ -83,11 +82,19 @@ public class PromptOptionService {
         return new ArrayList<>(matches.values());
     }
 
-    public Map<String, String> config() {
+    public Map<String, Object> config() {
         String generalNegativePrompt = repository.findGeneralNegativePrompt();
         if (generalNegativePrompt == null || generalNegativePrompt.trim().isEmpty())
             throw new IllegalStateException("通用反向模板未配置或未启用");
-        return Collections.singletonMap("generalNegativePrompt", generalNegativePrompt.trim());
+        List<PromptOptionCategoryVO> categories = new ArrayList<>();
+        for (Map<String, Object> row : repository.findEnabledCategories()) {
+            categories.add(new PromptOptionCategoryVO(text(row.get("category")), text(row.get("name")), integer(row.get("sortOrder")), truth(row.get("allowMultiple"))));
+        }
+        if (categories.isEmpty()) throw new IllegalStateException("Prompt 词条分类未配置");
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("generalNegativePrompt", generalNegativePrompt.trim());
+        result.put("categories", categories);
+        return result;
     }
 
     @Transactional
@@ -117,7 +124,7 @@ public class PromptOptionService {
     private PromptCatalogMapper.OptionRecord validate(PromptOptionDTO dto) {
         if (dto == null) throw new IllegalArgumentException("词条不能为空");
         validateId(dto.getId());
-        if (!CATEGORIES.contains(dto.getCategory())) throw new IllegalArgumentException("词条分类无效");
+        Map<String, Object> category = requireCategory(dto.getCategory());
         String name = required(dto.getName(), "中文名称", 100);
         String type = required(dto.getType(), "词条类型", 16).toLowerCase(Locale.ROOT);
         if (!type.equals("positive") && !type.equals("negative")) throw new IllegalArgumentException("词条类型只能是 positive 或 negative");
@@ -126,7 +133,7 @@ public class PromptOptionService {
         if (type.equals("negative") && reverseId != null) throw new IllegalArgumentException("反向词条不能再关联反向词条");
         if (dto.getSortOrder() == null || dto.getSortOrder() < 0 || dto.getSortOrder() > 100000) throw new IllegalArgumentException("排序必须在 0-100000 之间");
         if (dto.getEnabled() == null || dto.getAllowMultiple() == null) throw new IllegalArgumentException("启用状态和多选规则不能为空");
-        boolean expectedMultiple = type.equals("positive") && MULTIPLE_CATEGORIES.contains(dto.getCategory());
+        boolean expectedMultiple = type.equals("positive") && truth(category.get("allowMultiple"));
         if (dto.getAllowMultiple() != expectedMultiple) throw new IllegalArgumentException("该分类的多选规则应为：" + expectedMultiple);
         PromptCatalogMapper.OptionRecord record = new PromptCatalogMapper.OptionRecord();
         record.setId(dto.getId()); record.setCategory(dto.getCategory()); record.setName(name);
@@ -149,6 +156,11 @@ public class PromptOptionService {
     private PromptOptionVO toVO(Map<String, Object> row) {
         return new PromptOptionVO(text(row.get("id")), text(row.get("category")), text(row.get("name")), text(row.get("prompt")), text(row.get("type")), text(row.get("reverseId")),
                 text(row.get("positivePrompt")), text(row.get("negativePrompt")), integer(row.get("sortOrder")), truth(row.get("enabled")), truth(row.get("allowMultiple")));
+    }
+    private Map<String, Object> requireCategory(String category) {
+        Map<String, Object> result = category == null ? null : repository.findEnabledCategory(category);
+        if (result == null || result.isEmpty()) throw new IllegalArgumentException("词条分类无效或已停用");
+        return result;
     }
     private void validateId(String id) { if (id == null || !ID_PATTERN.matcher(id).matches()) throw new IllegalArgumentException("词条 ID 只能使用小写字母、数字和下划线，长度 1-64"); }
     private String required(String value, String label, int max) { if (value == null || value.trim().isEmpty()) throw new IllegalArgumentException(label + "不能为空"); return optional(value, label, max); }

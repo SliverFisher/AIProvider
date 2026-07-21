@@ -9,6 +9,8 @@ import java.util.Map;
 public class PromptCatalogRepository {
     private final PromptCatalogMapper mapper;
     public PromptCatalogRepository(PromptCatalogMapper mapper) { this.mapper = mapper; }
+    public List<Map<String, Object>> findEnabledCategories() { return mapper.findEnabledCategories(); }
+    public Map<String, Object> findEnabledCategory(String category) { return mapper.findEnabledCategory(category); }
     public List<Map<String, Object>> findEnabledOptions() { return mapper.findEnabledOptions(); }
     public List<Map<String, Object>> findEnabledNegativeOptions() { return mapper.findEnabledNegativeOptions(); }
     public List<Map<String, Object>> findOptionPage(String query, String category, Boolean enabled, String type, int limit, long offset) { return mapper.findOptionPage(query, category, enabled, type, limit, offset); }

@@ -23,7 +23,7 @@ public class PromptOptionController {
                                            @RequestParam(defaultValue = "all") String status) {
         return Result.success(service.page(query, category, status, type, page, pageSize));
     }
-    @GetMapping("/config") public Result<Map<String, String>> config() { return Result.success(service.config()); }
+    @GetMapping("/config") public Result<Map<String, Object>> config() { return Result.success(service.config()); }
     @PostMapping("/resolve") public Result<List<PromptOptionVO>> resolve(@RequestBody List<String> ids) { return Result.success(service.resolve(ids)); }
     @PostMapping("/analyze") public Result<List<PromptOptionVO>> analyze(@RequestBody Map<String, String> prompts) {
         return Result.success(service.analyze(prompts == null ? null : prompts.get("positivePrompt"), prompts == null ? null : prompts.get("negativePrompt")));

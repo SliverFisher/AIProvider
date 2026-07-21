@@ -3,10 +3,14 @@ import React from "react";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import PromptManager from "./PromptManager";
-import { emptySelectedOptions } from "./promptComposer";
 
 const catalog = {
   generalNegativePrompt: "low quality, bad hands",
+  categories: [
+    { category: "Character", label: "人物", sortOrder: 1, multiple: true },
+    { category: "Clothing", label: "服装", sortOrder: 2, multiple: true },
+    { category: "Quality", label: "画质词", sortOrder: 3, multiple: true },
+  ],
   options: [
     { id: "solo", category: "Character", name: "单人", positivePrompt: "solo", negativePrompt: "crowd", allowMultiple: true },
     { id: "girl", category: "Character", name: "女孩", positivePrompt: "1girl", negativePrompt: "male", allowMultiple: true },
@@ -23,7 +27,7 @@ describe("PromptManager", () => {
     window.history.replaceState({}, "", "/prompts");
     vi.stubGlobal("fetch", vi.fn(async (input, options = {}) => {
       const url = String(input);
-      if (url === "/api/prompt-options/config") return response({ generalNegativePrompt: catalog.generalNegativePrompt });
+      if (url === "/api/prompt-options/config") return response({ generalNegativePrompt: catalog.generalNegativePrompt, categories: catalog.categories });
       if (url === "/api/prompt-options/resolve") {
         const ids = JSON.parse(options.body); return response(catalog.options.filter((option) => ids.includes(option.id)));
       }
@@ -78,12 +82,12 @@ describe("PromptManager", () => {
   });
 
   it("restores every saved selection and final Prompt from the edit query", async () => {
-    const selectedOptions = { ...emptySelectedOptions(), Quality: ["masterpiece"] };
+    const selectedOptions = { Quality: ["masterpiece"] };
     const preset = { id: 7, name: "已保存", promptMode: "tags", selectedOptions, positiveExtra: "extra", negativeExtra: "", positivePrompt: "saved final", negativePrompt: "saved negative", remark: "memo", isDefault: true };
     window.history.replaceState({}, "", "/prompts?edit=7");
     fetch.mockImplementation(async (input, options = {}) => {
       const url = String(input);
-      if (url === "/api/prompt-options/config") return response({ generalNegativePrompt: catalog.generalNegativePrompt });
+      if (url === "/api/prompt-options/config") return response({ generalNegativePrompt: catalog.generalNegativePrompt, categories: catalog.categories });
       if (url === "/api/prompt-options/resolve") {
         const ids = JSON.parse(options.body); return response(catalog.options.filter((option) => ids.includes(option.id)));
       }
@@ -125,7 +129,7 @@ describe("PromptManager", () => {
     const signals = [];
     fetch.mockImplementation((_input, options = {}) => { signals.push(options.signal); return new Promise(() => {}); });
     const view = render(<PromptManager />);
-    await waitFor(() => expect(signals).toHaveLength(2));
+    await waitFor(() => expect(signals).toHaveLength(1));
     view.unmount();
     expect(signals.every((signal) => signal.aborted)).toBe(true);
   });

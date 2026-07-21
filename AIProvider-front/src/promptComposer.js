@@ -1,31 +1,9 @@
-const CATEGORY_LABELS = {
-  Appearance: "外貌",
-  Character: "人物",
-  Special: "特殊",
-  Clothing: "服装",
-  Artist: "画师",
-  Pose: "姿势",
-  Expression: "表情",
-  Camera: "镜头",
-  Hair: "头发",
-  Relationship: "人物关系",
-  Action: "行为",
-  Eyes: "眼睛",
-  Background: "背景",
-  Lighting: "光照",
-  Composition: "构图",
-  Style: "风格",
-  Quality: "画质词",
-};
-
-const CATEGORY_ORDER = Object.keys(CATEGORY_LABELS);
-
-export const PROMPT_CATEGORIES = CATEGORY_ORDER.map((category) => ({
-  key: category,
-  category,
-  label: CATEGORY_LABELS[category],
-  multiple: true,
-}));
+export function normalizePromptCategories(categories = []) {
+  return [...categories]
+    .filter((item) => item?.category && item?.label)
+    .sort((left, right) => Number(left.sortOrder) - Number(right.sortOrder) || String(left.category).localeCompare(String(right.category)))
+    .map((item) => ({ key: item.category, category: item.category, label: item.label, multiple: Boolean(item.multiple), sortOrder: Number(item.sortOrder) }));
+}
 
 export function buildPromptCategories(options = []) {
   const grouped = new Map();
@@ -35,15 +13,12 @@ export function buildPromptCategories(options = []) {
     grouped.set(option.category, current === undefined ? Boolean(option.allowMultiple) : current || Boolean(option.allowMultiple));
   }
   const categories = [...grouped.keys()].sort((left, right) => {
-    const leftIndex = CATEGORY_ORDER.indexOf(left);
-    const rightIndex = CATEGORY_ORDER.indexOf(right);
-    return (leftIndex < 0 ? Number.MAX_SAFE_INTEGER : leftIndex) - (rightIndex < 0 ? Number.MAX_SAFE_INTEGER : rightIndex) || left.localeCompare(right);
+    return left.localeCompare(right);
   });
-  if (!categories.length) return PROMPT_CATEGORIES;
-  return categories.map((category) => ({ key: category, category, label: CATEGORY_LABELS[category] || category, multiple: grouped.get(category) }));
+  return categories.map((category) => ({ key: category, category, label: category, multiple: grouped.get(category) }));
 }
 
-export function emptySelectedOptions(definitions = PROMPT_CATEGORIES) {
+export function emptySelectedOptions(definitions = []) {
   return Object.fromEntries(definitions.map(({ key }) => [key, []]));
 }
 
@@ -105,7 +80,7 @@ export function composePrompts(selectedOptions, options, generalNegativePrompt, 
   };
 }
 
-export function normalizeSelectedOptions(value, definitions = PROMPT_CATEGORIES) {
+export function normalizeSelectedOptions(value, definitions = []) {
   const empty = emptySelectedOptions(definitions);
   for (const { key, multiple } of definitions) {
     const ids = Array.isArray(value?.[key]) ? [...new Set(value[key].filter((id) => typeof id === "string" && id))] : [];
