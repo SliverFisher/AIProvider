@@ -23,7 +23,7 @@ function normalizePreset(item, definitions) {
 }
 
 const OPTION_PAGE_SIZE = 100;
-function MultiOptionPicker({ definition, options, value, onChange, onEditOptions, onOpen, loading }) {
+function MultiOptionPicker({ definition, options, value = [], onChange, onEditOptions, onOpen, loading }) {
   const rootRef = useRef(null);
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
@@ -52,7 +52,7 @@ function MultiOptionPicker({ definition, options, value, onChange, onEditOptions
   </div>;
 }
 
-function SingleOptionPicker({ definition, options, value, onChange, onEditOptions, onOpen, loading }) {
+function SingleOptionPicker({ definition, options, value = [], onChange, onEditOptions, onOpen, loading }) {
   return <div className="prompt-option-field"><span>{definition.label}<small>{loading ? "加载中" : "单选"}</small></span><select aria-label={definition.label} value={value[0] || ""} onFocus={onOpen} onChange={(event) => onChange(event.target.value ? [event.target.value] : [])}>
     <option value="">不选择</option>
     {options.map((option) => <option key={option.id} value={option.id}>{option.name} · {option.positivePrompt}</option>)}
@@ -133,6 +133,7 @@ export default function PromptManager({ onEditOptions }) {
     call("/api/prompt-options/config").then((config) => {
       const nextDefinitions = normalizePromptCategories(config?.categories);
       if (!nextDefinitions.length) throw new Error("Prompt 词条分类未配置");
+      setDraft((current) => normalizePreset(current, nextDefinitions));
       setCatalog((current) => ({ ...current, categories: config.categories, generalNegativePrompt: config.generalNegativePrompt || "" }));
       return load(undefined, nextDefinitions);
     }).catch((exception) => { if (exception.name !== "AbortError") setError(exception.message); });
@@ -237,7 +238,7 @@ export default function PromptManager({ onEditOptions }) {
           <header><div><h3>Prompt 组合器</h3><small>词条来自数据库配置；修改选择后自动重建最终 Prompt</small></div><span>{Object.values(draft.selectedOptions).flat().length} 项</span></header>
           <UiSearchField className="prompt-option-search prompt-global-search" aria-label="全局搜索 Prompt 词条" value={globalOptionQuery} onChange={(event) => setGlobalOptionQuery(event.target.value)} placeholder="搜索中文、英文或词条 ID"><div className="prompt-global-search-results">{globalOptionQuery.trim() && globalOptionResults.map((option) => { const definition = definitions.find((item) => item.category === option.category); const selected = draft.selectedOptions?.[option.category]?.includes(option.id); return <button type="button" key={option.id} className={selected ? "is-selected" : ""} onClick={() => { const current = draft.selectedOptions?.[option.category] || []; const next = definition?.multiple ? (current.includes(option.id) ? current : [...current, option.id]) : [option.id]; setSelection(option.category, next); setGlobalOptionQuery(""); window.setTimeout(() => document.querySelector(`[data-prompt-category="${CSS.escape(option.category)}"]`)?.scrollIntoView({ behavior: "smooth", block: "center" }), 0); }}><span><strong>{option.name}</strong><small>{definition?.label || option.category} · {option.positivePrompt}</small></span>{selected && <span>已选</span>}</button>})}{globalOptionQuery.trim() && !globalOptionResults.length && <p>没有匹配词条</p>}</div></UiSearchField>
           <div className="prompt-category-grid">{definitions.map((definition) => {
-            const props = { definition, options: optionsByCategory[definition.category] || [], value: draft.selectedOptions[definition.key], onChange: (value) => setSelection(definition.key, value), onEditOptions, onOpen: () => loadCategory(definition.category).catch((exception) => { if (exception.name !== "AbortError") setError(exception.message); }), loading: Boolean(categoryLoading[definition.category]) };
+            const props = { definition, options: optionsByCategory[definition.category] || [], value: draft.selectedOptions?.[definition.key] || [], onChange: (value) => setSelection(definition.key, value), onEditOptions, onOpen: () => loadCategory(definition.category).catch((exception) => { if (exception.name !== "AbortError") setError(exception.message); }), loading: Boolean(categoryLoading[definition.category]) };
             return definition.multiple ? <div key={definition.key} data-prompt-category={definition.category}><MultiOptionPicker {...props} /></div> : <div key={definition.key} data-prompt-category={definition.category}><SingleOptionPicker {...props} /></div>;
           })}</div>
         </section>

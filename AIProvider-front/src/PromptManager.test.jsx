@@ -109,6 +109,15 @@ describe("PromptManager", () => {
     await waitFor(() => expect(fetch.mock.calls.some(([url]) => String(url).includes("category=Character"))).toBe(true));
   });
 
+  it("renders database categories while the preset request is still pending", async () => {
+    fetch.mockImplementation(async (input) => {
+      if (String(input) === "/api/prompt-options/config") return response({ generalNegativePrompt: catalog.generalNegativePrompt, categories: catalog.categories });
+      return new Promise(() => {});
+    });
+    render(<PromptManager />);
+    expect(await screen.findByLabelText("搜索人物")).toBeTruthy();
+  });
+
   it("separates prose schemes, saves paragraphs, and previews a full Chinese translation", async () => {
     render(<PromptManager />);
     await screen.findByLabelText("方案名称");
