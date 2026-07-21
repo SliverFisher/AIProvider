@@ -83,6 +83,7 @@ import RemoteCodex from "./RemoteCodex";
 import FileTransfer from "./FileTransfer";
 import FavoriteMediaLibrary from "./FavoriteMediaLibrary";
 import PlatformAccountCenter from "./PlatformAccountCenter";
+import AsrRecords from "./AsrRecords";
 import { RELEASE_VERSION } from "./releaseVersion";
 import { readJsonResponse } from "./apiResponse";
 import "./App.css";
@@ -101,6 +102,7 @@ const NAV = [
   { key: "maid", label: "我的女仆", icon: Heart, group: "create", color: "#ff718f" },
   { key: "market", label: "市场行情", icon: ChartLineUp, group: "operate", color: "#72ddb1" },
   { key: "monitor", label: "监控中心", icon: Pulse, group: "operate", color: "#ff6b6b" },
+  { key: "asrRecords", label: "语音识别", icon: MicrophoneStage, group: "operate", color: "#82b7ff" },
   { key: "remoteCodex", label: "远程 Codex", icon: ChatsCircle, group: "operate", color: "#a78bfa" },
   { key: "foundry", label: "链上工具", icon: Cube, group: "operate", color: "#f59e0b" },
   { key: "fileTransfer", label: "文件中转", icon: FolderSimple, group: "operate", color: "#60a5fa" },
@@ -126,6 +128,7 @@ const PAGE_DESCRIPTIONS = {
   promptOptions: "维护 Prompt 词条与分类规则",
   maid: "查看角色状态与模型活动",
   monitor: "服务健康、资源、网络与费用",
+  asrRecords: "播放录音、核对识别结果并保存人工修正",
   remoteCodex: "连接远程 Codex 并管理对话",
   foundry: "Foundry 工具与链上只读查询",
   fileTransfer: "个人设备之间上传、下载和删除文件",
@@ -276,14 +279,14 @@ function useDashboardData() {
 }
 
 function App() {
-  const viewFromPath = () => ({ "/favorites": "favorites", "/workshop": "workshop", "/manual-editor": "manualEditor", "/video-editor": "videoEditor", "/market": "market", "/prompts": "prompts", "/prompt-options": "promptOptions", "/maid": "maid", "/admin/monitor": "monitor", "/remote-codex": "remoteCodex", "/foundry": "foundry", "/file-transfer": "fileTransfer", "/camera": "camera", "/twitter": "twitter", "/content-operations": "contentOperations", "/accounts": "accounts", "/appearance": "appearance", "/settings": "settings" })[window.location.pathname] || "home";
+  const viewFromPath = () => ({ "/favorites": "favorites", "/workshop": "workshop", "/manual-editor": "manualEditor", "/video-editor": "videoEditor", "/market": "market", "/prompts": "prompts", "/prompt-options": "promptOptions", "/maid": "maid", "/admin/monitor": "monitor", "/admin/asr": "asrRecords", "/remote-codex": "remoteCodex", "/foundry": "foundry", "/file-transfer": "fileTransfer", "/camera": "camera", "/twitter": "twitter", "/content-operations": "contentOperations", "/accounts": "accounts", "/appearance": "appearance", "/settings": "settings" })[window.location.pathname] || "home";
   const [view, setView] = useState(viewFromPath);
   const [workshopMounted, setWorkshopMounted] = useState(() => viewFromPath() === "workshop");
   const [promptOptionCategory, setPromptOptionCategory] = useState("");
   const dashboard = useDashboardData();
   const current = NAV.find((item) => item.key === (view === "promptOptions" ? "prompts" : view));
   useEffect(() => {
-    const path = ({ favorites: "/favorites", workshop: "/workshop", manualEditor: "/manual-editor", videoEditor: "/video-editor", market: "/market", prompts: "/prompts", promptOptions: "/prompt-options", maid: "/maid", monitor: "/admin/monitor", remoteCodex: "/remote-codex", foundry: "/foundry", fileTransfer: "/file-transfer", camera: "/camera", twitter: "/twitter", contentOperations: "/content-operations", accounts: "/accounts", appearance: "/appearance", settings: "/settings" })[view] || "/";
+    const path = ({ favorites: "/favorites", workshop: "/workshop", manualEditor: "/manual-editor", videoEditor: "/video-editor", market: "/market", prompts: "/prompts", promptOptions: "/prompt-options", maid: "/maid", monitor: "/admin/monitor", asrRecords: "/admin/asr", remoteCodex: "/remote-codex", foundry: "/foundry", fileTransfer: "/file-transfer", camera: "/camera", twitter: "/twitter", contentOperations: "/content-operations", accounts: "/accounts", appearance: "/appearance", settings: "/settings" })[view] || "/";
     if (window.location.pathname !== path) window.history.replaceState({}, "", path);
   }, [view]);
   useEffect(() => {
@@ -367,6 +370,7 @@ function App() {
           ))}
         {view === "camera" && <SealedFeature title="手机监控" message="这片频道正在休眠，暂时不对外开放。" />}
         {view === "monitor" && <MonitorCenter />}
+        {view === "asrRecords" && <AsrRecords />}
         {view === "remoteCodex" && <RemoteCodex />}
         {view === "foundry" && <FoundryWorkbench />}
         {view === "fileTransfer" && <FileTransfer />}

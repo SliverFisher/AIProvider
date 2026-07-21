@@ -39,7 +39,7 @@ describe("UI release gate", () => {
   it("keeps every primary workspace on semantic theme tokens", () => {
     const theme = read("SemanticTheme.css");
     const tokens = read("uiTheme.js");
-    ["favorite-library", "video-editor-shell", "foundry-workbench", "system-settings-shell", "file-transfer-page", "twitter-publisher", "content-operations-center", "platform-account-center", "prompt-scheme-list", "maid-panel", "universe-toolbar"].forEach((root) => {
+    ["favorite-library", "video-editor-shell", "foundry-workbench", "system-settings-shell", "file-transfer-page", "twitter-publisher", "content-operations-center", "platform-account-center", "asr-records-page", "prompt-scheme-list", "maid-panel", "universe-toolbar"].forEach((root) => {
       expect(theme, `${root} 未接入全局语义主题`).toContain(root);
     });
     const copy = read("UiControl.jsx");
@@ -55,6 +55,20 @@ describe("UI release gate", () => {
     expect(app).toContain("<PlatformAccountCenter />");
     expect(page).toContain('import UiSearchField from "./UiSearchField"');
     expect(page).toContain('aria-label="搜索账号"');
+    expect(page).not.toMatch(/<div[^>]+onClick=/);
+    expect(css).toContain("var(--bg-surface)");
+    expect(css).toContain(":focus-visible");
+  });
+
+  it("keeps ASR records reachable, searchable, semantic, and native",()=>{
+    const app=read("App.jsx"),page=read("AsrRecords.jsx"),css=read("AsrRecords.css");
+    expect(app).toContain('{ key: "asrRecords"');
+    expect(app).toContain('asrRecords: "/admin/asr"');
+    expect(app).toContain("<AsrRecords />");
+    expect(page).toContain('import UiSearchField from "./UiSearchField"');
+    expect(page).toContain('aria-label="搜索识别文字"');
+    expect(page).toContain("<audio controls");
+    expect(page).toContain("/correction");
     expect(page).not.toMatch(/<div[^>]+onClick=/);
     expect(css).toContain("var(--bg-surface)");
     expect(css).toContain(":focus-visible");

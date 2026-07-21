@@ -32,6 +32,16 @@ prompt-translation:
   connect-timeout-ms: ${LIBRETRANSLATE_CONNECT_TIMEOUT_MS:3000}
   read-timeout-ms: ${LIBRETRANSLATE_READ_TIMEOUT_MS:60000}
 
+asr:
+  provider: ${ASR_PROVIDER:groq}
+  model: ${ASR_MODEL:whisper-large-v3}
+  endpoint: ${ASR_ENDPOINT:https://api.groq.com/openai/v1/audio/transcriptions}
+  api-key: ${ASR_API_KEY:}
+  storage-directory: ${ASR_STORAGE_DIRECTORY:/opt/aiprovider/asr}
+  max-audio-bytes: ${ASR_MAX_AUDIO_BYTES:26214400}
+  connect-timeout-ms: ${ASR_CONNECT_TIMEOUT_MS:5000}
+  read-timeout-ms: ${ASR_READ_TIMEOUT_MS:120000}
+
 mybatis:
   mapper-locations: classpath:mapper/*.xml
   type-aliases-package: com.aiprovider.model
