@@ -25,6 +25,8 @@ public class AssetItemDTO {
     private String sampler;
     private String scheduler;
     private String workflowId;
+    private String promptSchemeName;
+    private String promptMode;
     private LocalDateTime generatedAt;
     private LocalDateTime generationCompletedAt;
     private Long generationDurationMs;
@@ -67,6 +69,10 @@ public class AssetItemDTO {
     public void setScheduler(String scheduler) { this.scheduler = scheduler; }
     public String getWorkflowId() { return workflowId; }
     public void setWorkflowId(String workflowId) { this.workflowId = workflowId; }
+    public String getPromptSchemeName() { return promptSchemeName; }
+    public void setPromptSchemeName(String promptSchemeName) { this.promptSchemeName = promptSchemeName; }
+    public String getPromptMode() { return promptMode; }
+    public void setPromptMode(String promptMode) { this.promptMode = promptMode; }
     public LocalDateTime getGeneratedAt() { return generatedAt; }
     @JsonSetter("generatedAt")
     public void setGeneratedAt(String generatedAt) {

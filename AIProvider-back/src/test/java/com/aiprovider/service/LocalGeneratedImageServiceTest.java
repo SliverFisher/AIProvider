@@ -21,6 +21,7 @@ class LocalGeneratedImageServiceTest {
         item.setMediaType("IMAGE"); item.setMimeType("image/png");
         item.setPrompt("   "); item.setNegativePrompt("");
         item.setMainModel("  flux\\dev.safetensors  ");
+        item.setPromptSchemeName("  Flux 长文  "); item.setPromptMode("PROSE");
         LocalGeneratedImageBatchDTO batch = new LocalGeneratedImageBatchDTO();
         batch.setPlatform("Windows"); batch.setItems(Collections.singletonList(item));
 
@@ -31,6 +32,8 @@ class LocalGeneratedImageServiceTest {
         assertThat(item.getPrompt()).isNull();
         assertThat(item.getNegativePrompt()).isNull();
         assertThat(item.getMainModel()).isEqualTo("flux\\dev.safetensors");
+        assertThat(item.getPromptSchemeName()).isEqualTo("Flux 长文");
+        assertThat(item.getPromptMode()).isEqualTo("prose");
         verify(repository).upsertBatch(eq("Windows"), argThat(rows -> rows.size() == 1 && rows.get(0).get("item") == item));
     }
 

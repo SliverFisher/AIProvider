@@ -13,6 +13,8 @@ public class LocalGeneratedImageItemDTO {
     private String mimeType;
     private String workflowId;
     private String workflowName;
+    private String promptSchemeName;
+    private String promptMode;
     private String prompt;
     private String negativePrompt;
     private String mainModel;
@@ -42,6 +44,10 @@ public class LocalGeneratedImageItemDTO {
     public void setWorkflowId(String workflowId) { this.workflowId = workflowId; }
     public String getWorkflowName() { return workflowName; }
     public void setWorkflowName(String workflowName) { this.workflowName = workflowName; }
+    public String getPromptSchemeName() { return promptSchemeName; }
+    public void setPromptSchemeName(String promptSchemeName) { this.promptSchemeName = promptSchemeName; }
+    public String getPromptMode() { return promptMode; }
+    public void setPromptMode(String promptMode) { this.promptMode = promptMode; }
     public String getPrompt() { return prompt; }
     public void setPrompt(String prompt) { this.prompt = prompt; }
     public String getNegativePrompt() { return negativePrompt; }

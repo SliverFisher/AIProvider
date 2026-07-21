@@ -53,6 +53,8 @@ public class AssetService {
             if (item.getGenerationDurationMs() != null) item.setGenerationDurationMs(Math.max(0, item.getGenerationDurationMs()));
             item.setLorasJson(clean(item.getLorasJson(), 16000));
             item.setMainModel(clean(item.getMainModel(), 1000));
+            item.setPromptSchemeName(clean(item.getPromptSchemeName(), 255));
+            item.setPromptMode(promptMode(item.getPromptMode()));
             String pathHash = sha256(pathKey);
             pathHashes.add(pathHash);
             rows.add(Map.of("pathHash", pathHash, "item", item));
@@ -133,6 +135,11 @@ public class AssetService {
         if (value == null || value.trim().isEmpty()) return null;
         String text = value.trim(); return text.length() <= max ? text : text.substring(0, max);
     }
+    private static String promptMode(String value) {
+        String mode = value == null || value.trim().isEmpty() ? "tags" : value.trim().toLowerCase(Locale.ROOT);
+        if (!mode.equals("tags") && !mode.equals("prose")) throw new IllegalArgumentException("Prompt 类型只能是 tags 或 prose");
+        return mode;
+    }
     private static String fileName(String path) {
         int index = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'));
         return index >= 0 ? path.substring(index + 1) : path;
@@ -168,7 +175,7 @@ public class AssetService {
     private static AssetVO toVO(Map<String,Object> row) {
         return new AssetVO(number(row.get("id")), text(row.get("platform")), text(row.get("localPath")), text(row.get("localUrl")), text(row.get("fileName")), number(row.get("fileSize")),
                 integer(row.get("width")), integer(row.get("height")), text(row.get("assetType")), text(row.get("mimeType")), text(row.get("status")), text(row.get("trashOriginalStatus")), text(row.get("prompt")), text(row.get("negativePrompt")), text(row.get("mainModel")), text(row.get("lorasJson")), nullableLong(row.get("seed")), integer(row.get("steps")),
-                decimal(row.get("cfg")), text(row.get("sampler")), text(row.get("scheduler")), text(row.get("workflowId")), date(row.get("generatedAt")),
+                decimal(row.get("cfg")), text(row.get("sampler")), text(row.get("scheduler")), text(row.get("workflowId")), text(row.get("promptSchemeName")), text(row.get("promptMode")), date(row.get("generatedAt")),
                 date(row.get("generationCompletedAt")), nullableLong(row.get("generationDurationMs")), date(row.get("createdAt")));
     }
     private static String text(Object value) { return value == null ? null : String.valueOf(value); }

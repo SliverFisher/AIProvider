@@ -1,4 +1,4 @@
-import { ArrowClockwise, ArrowDown, ArrowUp, CaretUp, DiceFive, FloppyDisk, PencilSimple, Plus, Sparkle, Stack, UploadSimple, X } from "@phosphor-icons/react";
+import { ArrowClockwise, ArrowDown, ArrowUp, CaretUp, DiceFive, FloppyDisk, PencilSimple, Plus, Sparkle, Stack, Translate, UploadSimple, X } from "@phosphor-icons/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import "./WorkflowPanel.css";
 import MaskPointEditor from "./MaskPointEditor";
@@ -178,7 +178,7 @@ function WorkflowField({ fieldKey, fieldSpec, value, referenceFile, onReference,
   return <label>{label}<input aria-label={label} value={value ?? ""} onChange={(event) => onChange(fieldKey, event.target.value)} /></label>;
 }
 
-export default function WorkflowPanel({ workflows, loading, workflow, fieldKeys, fieldSpecs, values, onWorkflowChange, onFieldChange, referenceFiles, onReference, onReferenceDrop, loraModels, loraModelsLoading, mainModels, mainModelsLoading, promptOptions = [], onPromptOptionsReload, onPromptOptionsQuery, presets, presetQuery, onPresetChange, presetSaveName, onPresetSaveNameChange, onSavePreset, onReloadPreset, onEditPreset, presetSaving, presetReloading, onLuckyGenerate, luckyLoading, onBatchGenerate, onGenerate, disabled }) {
+export default function WorkflowPanel({ workflows, loading, workflow, fieldKeys, fieldSpecs, values, onWorkflowChange, onFieldChange, onPromptModeChange, referenceFiles, onReference, onReferenceDrop, loraModels, loraModelsLoading, mainModels, mainModelsLoading, promptOptions = [], onPromptOptionsReload, onPromptOptionsQuery, presets, presetQuery, onPresetChange, presetSaveName, onPresetSaveNameChange, onSavePreset, onReloadPreset, onEditPreset, presetSaving, presetReloading, onLuckyGenerate, luckyLoading, onBatchGenerate, onGenerate, disabled }) {
   const [promptEditing, setPromptEditing] = useState({ positivePrompt: false, negativePrompt: false });
   const [promptTermQuery, setPromptTermQuery] = useState("");
   const [negativeTermQuery, setNegativeTermQuery] = useState("");
@@ -197,6 +197,10 @@ export default function WorkflowPanel({ workflows, loading, workflow, fieldKeys,
   const [chipEditSaving, setChipEditSaving] = useState(false);
   const [saveDialogOpen, setSaveDialogOpen] = useState(false);
   const [batchDialog, setBatchDialog] = useState({ open: false, category: "", selectedIds: [] });
+  const [proseTranslation, setProseTranslation] = useState(null);
+  const [proseTranslating, setProseTranslating] = useState(false);
+  const [proseTranslationError, setProseTranslationError] = useState("");
+  const activePromptMode = values.promptMode === "prose" ? "prose" : "tags";
   const promptTranslationService = useMemo(() => getPromptTranslationService(promptOptions), [promptOptions]);
   const promptTermIndexes = useMemo(() => {
     const positive = new Map();
@@ -235,6 +239,18 @@ export default function WorkflowPanel({ workflows, loading, workflow, fieldKeys,
     .filter((option) => option.category === batchDialog.category && (option.prompt || option.positivePrompt || option.negativePrompt))
     .sort((left, right) => Number(left.sortOrder ?? 0) - Number(right.sortOrder ?? 0) || String(left.name || left.id).localeCompare(String(right.name || right.id), "zh-CN")), [batchDialog.category, promptOptions]);
   const supportsPrompt = fieldKeys.includes("positivePrompt") || fieldKeys.includes("negativePrompt");
+  useEffect(() => { setProseTranslation(null); setProseTranslationError(""); }, [activePromptMode, values.negativePrompt, values.positivePrompt]);
+  const translateProse = async () => {
+    if (!String(values.positivePrompt || "").trim() || proseTranslating) return;
+    setProseTranslating(true); setProseTranslationError("");
+    try {
+      const response = await fetch("/api/prompt-translations/prose", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ positivePrompt: values.positivePrompt || "", negativePrompt: values.negativePrompt || "" }) });
+      const payload = await response.json();
+      if (!response.ok || payload.code !== 200) throw new Error(payload.message || "长文翻译失败");
+      setProseTranslation(payload.data || null);
+    } catch (exception) { setProseTranslationError(exception.message || "长文翻译失败"); }
+    finally { setProseTranslating(false); }
+  };
   useEffect(() => { setPromptEditing({ positivePrompt: false, negativePrompt: false }); }, [presetQuery, workflow?.id]);
   useEffect(() => { setDisabledPromptTerms({ positivePrompt: [], negativePrompt: [] }); promptTermOrderRef.current = { positivePrompt: new Map(), negativePrompt: new Map() }; }, [presetQuery, workflow?.id, presetReloading]);
   useEffect(() => {
@@ -433,15 +449,16 @@ export default function WorkflowPanel({ workflows, loading, workflow, fieldKeys,
         </select>
       </div>
       <div className="workflow-panel__chooser-actions">
-        {supportsPrompt && <button className="workflow-panel__lucky" type="button" onClick={onLuckyGenerate} disabled={disabled.blocked || luckyLoading}><DiceFive />{luckyLoading ? "正在抽取" : "手气不错"}</button>}
-        {supportsPrompt && <button className="workflow-panel__batch-generate" type="button" onClick={openBatchDialog} disabled={disabled.blocked || !batchCategories.length}><Stack />批量生成</button>}
+        {supportsPrompt && activePromptMode === "tags" && <button className="workflow-panel__lucky" type="button" onClick={onLuckyGenerate} disabled={disabled.blocked || luckyLoading}><DiceFive />{luckyLoading ? "正在抽取" : "手气不错"}</button>}
+        {supportsPrompt && activePromptMode === "tags" && <button className="workflow-panel__batch-generate" type="button" onClick={openBatchDialog} disabled={disabled.blocked || !batchCategories.length}><Stack />批量生成</button>}
         <button className="comfy-submit workflow-panel__generate" type="button" onClick={onGenerate} disabled={disabled.blocked}><Sparkle />{disabled.busy ? "正在提交…" : "开始生成"}</button>
       </div>
       {supportsPrompt && <div className="workflow-panel__presets workflow-panel__presets--chooser">
         <select aria-label="Prompt 方案" value={presetQuery} onChange={(event) => onPresetChange(event.target.value)}>
           <option value="">请选择 Prompt 方案</option>
-          {presets.map((preset) => <option key={preset.id} value={String(preset.id)}>{preset.name}</option>)}
+          {presets.map((preset) => <option key={preset.id} value={String(preset.id)}>{preset.promptMode === "prose" ? "[长文式]" : "[标签式]"} {preset.name}</option>)}
         </select>
+        <fieldset className="workflow-panel__prompt-mode"><legend>当前 Prompt 类型</legend><label className={activePromptMode === "tags" ? "active" : ""}><input type="radio" name="generationPromptMode" value="tags" checked={activePromptMode === "tags"} onChange={() => onPromptModeChange?.("tags")} /><span><b>标签式</b><small>短标签与词条组合</small></span></label><label className={activePromptMode === "prose" ? "active" : ""}><input type="radio" name="generationPromptMode" value="prose" checked={activePromptMode === "prose"} onChange={() => onPromptModeChange?.("prose")} /><span><b>长文式</b><small>完整句子和段落</small></span></label></fieldset>
         <div className="workflow-panel__preset-save workflow-panel__preset-save--compact">
           <button type="button" disabled={presetSaving} onClick={() => setSaveDialogOpen(true)}><Plus />另存为方案</button>
           <button type="button" disabled={presetSaving || !presetQuery} onClick={() => onSavePreset("overwrite")}><FloppyDisk />覆盖方案</button>
@@ -470,8 +487,9 @@ export default function WorkflowPanel({ workflows, loading, workflow, fieldKeys,
     </div>}
 
     {workflow ? <section className="workflow-panel__parameters" aria-label="工作流参数" key={workflow.id}>
-      <header><div><strong>工作流参数</strong><small>{fieldKeys.length} 项</small></div>{supportsPrompt && <button type="button" className="workflow-panel__language" aria-label={promptLanguage === "en" ? "切换为中文 Prompt" : "切换为英文 Prompt"} onClick={() => setPromptLanguage((current) => current === "zh" ? "en" : "zh")}>{promptLanguage === "en" ? "中文" : "EN"}</button>}</header>
-      {supportsPrompt && promptFieldKeys.includes("positivePrompt") && <section className={`workflow-panel__prompt-editor workflow-panel__prompt-editor--positive ${promptEditing.positivePrompt ? "is-open" : ""}`}>
+      <header><div><strong>工作流参数</strong><small>{fieldKeys.length} 项 · {activePromptMode === "prose" ? "长文式" : "标签式"}</small></div>{supportsPrompt && activePromptMode === "tags" && <button type="button" className="workflow-panel__language" aria-label={promptLanguage === "en" ? "切换为中文 Prompt" : "切换为英文 Prompt"} onClick={() => setPromptLanguage((current) => current === "zh" ? "en" : "zh")}>{promptLanguage === "en" ? "中文" : "EN"}</button>}</header>
+      {supportsPrompt && activePromptMode === "prose" && <section className="workflow-panel__prose-editor" aria-label="长文式 Prompt 编辑器"><header><div><strong>长文 Prompt</strong><small>保留完整句子、段落和换行，不拆分为标签。</small></div><button type="button" onClick={translateProse} disabled={proseTranslating || !String(values.positivePrompt || "").trim()}><Translate />{proseTranslating ? "翻译中…" : "翻译为中文"}</button></header>{promptFieldKeys.includes("positivePrompt") && <label>长文正向描述 <small>{String(values.positivePrompt || "").length} / 16000</small><textarea aria-label="生成长文正向描述" rows="12" maxLength="16000" value={values.positivePrompt || ""} onChange={(event) => onFieldChange("positivePrompt", event.target.value)} /></label>}{promptFieldKeys.includes("negativePrompt") && <label>长文反向约束 <small>可选 · {String(values.negativePrompt || "").length} / 16000</small><textarea aria-label="生成长文反向约束" rows="6" maxLength="16000" value={values.negativePrompt || ""} onChange={(event) => onFieldChange("negativePrompt", event.target.value)} /></label>}{proseTranslationError && <p role="alert">{proseTranslationError}</p>}{proseTranslation && <section className="workflow-panel__prose-translation" aria-label="生成长文中文翻译预览"><strong>中文翻译预览</strong><textarea aria-label="生成长文正向译文" readOnly rows="8" value={proseTranslation.positivePrompt || ""} />{proseTranslation.negativePrompt && <textarea aria-label="生成长文反向译文" readOnly rows="4" value={proseTranslation.negativePrompt} />}</section>}</section>}
+      {supportsPrompt && activePromptMode === "tags" && promptFieldKeys.includes("positivePrompt") && <section className={`workflow-panel__prompt-editor workflow-panel__prompt-editor--positive ${promptEditing.positivePrompt ? "is-open" : ""}`}>
         <header><div><strong>正向提示词</strong><small>{presetQuery ? "已由当前结构化方案填充" : "选择方案填充，或手动编辑"}</small></div><button type="button" aria-expanded={promptEditing.positivePrompt} onClick={() => setPromptEditing((current) => ({ ...current, positivePrompt: !current.positivePrompt }))}>{promptEditing.positivePrompt ? <><CaretUp />收起</> : <><PencilSimple />手动编辑</>}</button></header>
         {promptEditing.positivePrompt && <div className="workflow-panel__fields workflow-panel__prompt-fields">
           {renderPromptField("positivePrompt")}
@@ -480,7 +498,7 @@ export default function WorkflowPanel({ workflows, loading, workflow, fieldKeys,
           {quickError && <small className="workflow-panel__quick-option-error">{quickError}</small>}
         </div>}
       </section>}
-      {supportsPrompt && promptFieldKeys.includes("negativePrompt") && <section className={`workflow-panel__prompt-editor workflow-panel__prompt-editor--negative ${promptEditing.negativePrompt ? "is-open" : ""}`}>
+      {supportsPrompt && activePromptMode === "tags" && promptFieldKeys.includes("negativePrompt") && <section className={`workflow-panel__prompt-editor workflow-panel__prompt-editor--negative ${promptEditing.negativePrompt ? "is-open" : ""}`}>
         <header><div><strong>反向提示词</strong><small>{presetQuery ? "已由当前结构化方案填充" : "选择方案填充，或手动编辑"}</small></div><button type="button" aria-expanded={promptEditing.negativePrompt} onClick={() => setPromptEditing((current) => ({ ...current, negativePrompt: !current.negativePrompt }))}>{promptEditing.negativePrompt ? <><CaretUp />收起</> : <><PencilSimple />手动编辑</>}</button></header>
         {promptEditing.negativePrompt && <div className="workflow-panel__fields workflow-panel__prompt-fields">
           {renderPromptField("negativePrompt")}

@@ -16,6 +16,7 @@ class ComfyTaskServiceTest {
         ComfyTaskService service = new ComfyTaskService(repository);
         ComfyTaskRecordDTO first = task("p1");
         ComfyTaskRecordDTO second = task("p2");
+        when(repository.saveBatch(anyList())).thenReturn(2);
 
         service.saveBatch(Arrays.asList(first, second));
 
@@ -23,6 +24,19 @@ class ComfyTaskServiceTest {
         verify(repository, never()).save(any());
         assertEquals("QUEUED", first.getStatus());
         assertEquals("QUEUED", second.getStatus());
+        assertEquals("tags", first.getPromptMode());
+        assertEquals("tags", second.getPromptMode());
+    }
+
+    @Test void preservesAndValidatesTheGenerationPromptMode() {
+        ComfyTaskRepository repository = mock(ComfyTaskRepository.class);
+        when(repository.save(any())).thenReturn(1);
+        ComfyTaskRecordDTO prose = task("prose-task"); prose.setPromptMode("PROSE");
+        new ComfyTaskService(repository).save(prose);
+        assertEquals("prose", prose.getPromptMode());
+
+        ComfyTaskRecordDTO invalid = task("bad-task"); invalid.setPromptMode("automatic");
+        org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException.class, () -> new ComfyTaskService(repository).save(invalid));
     }
 
     @Test

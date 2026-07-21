@@ -1,5 +1,6 @@
 export const FALLBACK_FORM = {
   workflowId: "futa01",
+  promptMode: "tags",
   positivePrompt: "",
   negativePrompt: "",
   loras: [],
@@ -51,6 +52,7 @@ export function createWorkflowForm(workflow) {
   return {
     ...values,
     workflowId: workflow.id,
+    promptMode: "tags",
     randomSeed: defaults.randomSeed ?? true,
     generateTransparent: defaults.generateTransparent ?? false,
   };
@@ -71,7 +73,8 @@ export function applySchemeToWorkflow(form, scheme, workflow) {
   const prompts = {};
   if (workflowFields.has("positivePrompt")) prompts.positivePrompt = scheme.positivePrompt ?? "";
   if (workflowFields.has("negativePrompt")) prompts.negativePrompt = scheme.negativePrompt ?? "";
-  return { ...form, ...prompts, workflowId: workflow.id };
+  const promptMode = scheme.promptMode === "prose" ? "prose" : "tags";
+  return { ...form, ...prompts, promptMode, workflowId: workflow.id };
 }
 
 export function hasPromptSchemeContent(scheme) {

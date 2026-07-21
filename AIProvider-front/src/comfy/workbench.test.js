@@ -4,16 +4,16 @@ import { applySchemeToWorkflow, calculateComfyProgress, createComfyProgressPlan,
 describe("workbench workflow state", () => {
   it("rebuilds state from the selected workflow instead of retaining the previous workflow", () => {
     expect(createWorkflowForm({ id: "futa01", fields: ["width"], defaults: { width: 1080 } }))
-      .toEqual({ workflowId: "futa01", width: 1080, randomSeed: true, generateTransparent: false });
+      .toEqual({ workflowId: "futa01", promptMode: "tags", width: 1080, randomSeed: true, generateTransparent: false });
     expect(createWorkflowForm(null).workflowId).toBe("");
     expect(createWorkflowForm({ id: "unknown", fields: ["customField"] }))
-      .toEqual({ workflowId: "unknown", customField: "", randomSeed: true, generateTransparent: false });
+      .toEqual({ workflowId: "unknown", promptMode: "tags", customField: "", randomSeed: true, generateTransparent: false });
     expect(createWorkflowForm({ id: "flags", fields: [], defaults: { randomSeed: false, generateTransparent: true } }))
-      .toEqual({ workflowId: "flags", randomSeed: false, generateTransparent: true });
+      .toEqual({ workflowId: "flags", promptMode: "tags", randomSeed: false, generateTransparent: true });
     expect(createWorkflowForm({ id: "loras", fields: ["loras"], defaults: { loras: ["detail.safetensors"] } }))
-      .toEqual({ workflowId: "loras", loras: ["detail.safetensors"], randomSeed: true, generateTransparent: false });
+      .toEqual({ workflowId: "loras", promptMode: "tags", loras: ["detail.safetensors"], randomSeed: true, generateTransparent: false });
     expect(createWorkflowForm({ id: "invalid-loras", fields: ["loras"], defaults: { loras: "detail.safetensors" } }))
-      .toEqual({ workflowId: "invalid-loras", loras: [], randomSeed: true, generateTransparent: false });
+      .toEqual({ workflowId: "invalid-loras", promptMode: "tags", loras: [], randomSeed: true, generateTransparent: false });
     expect(FALLBACK_FORM.workflowId).toBe("futa01");
   });
 
@@ -29,7 +29,7 @@ describe("workbench workflow state", () => {
   it("only applies Prompt fields that belong to the current workflow", () => {
     const workflow = { id: "futa01", binding: { fields: { positivePrompt: {}, width: {} } } };
     expect(applySchemeToWorkflow({ workflowId: "futa01", positivePrompt: "old", width: 1 }, { positivePrompt: "new", negativePrompt: "negative" }, workflow))
-      .toEqual({ workflowId: "futa01", positivePrompt: "new", width: 1 });
+      .toEqual({ workflowId: "futa01", positivePrompt: "new", promptMode: "tags", width: 1 });
     expect(applySchemeToWorkflow({ workflowId: "futa01", width: 1 }, null, workflow)).toEqual({ workflowId: "futa01", width: 1 });
     expect(applySchemeToWorkflow({ workflowId: "futa01" }, { positivePrompt: "new" }, null)).toEqual({ workflowId: "futa01" });
   });
@@ -40,7 +40,13 @@ describe("workbench workflow state", () => {
       { workflowId: "futa01", positivePrompt: "old" },
       { positivePrompt: "" },
       workflow,
-    )).toEqual({ workflowId: "futa01", positivePrompt: "" });
+    )).toEqual({ workflowId: "futa01", positivePrompt: "", promptMode: "tags" });
+  });
+
+  it("preserves prose mode when applying a long-form scheme", () => {
+    const workflow = { id: "flux", binding: { fields: { positivePrompt: {}, negativePrompt: {} } } };
+    expect(applySchemeToWorkflow({ workflowId: "flux" }, { promptMode: "prose", positivePrompt: "A complete scene.", negativePrompt: "No text." }, workflow))
+      .toMatchObject({ promptMode: "prose", positivePrompt: "A complete scene.", negativePrompt: "No text." });
   });
 
   it("does not auto-apply an empty default Prompt scheme over workflow defaults", () => {
@@ -56,7 +62,7 @@ describe("workbench workflow state", () => {
     expect(revision).toContain('"modifiedAt":"v1"');
     expect(refreshWorkflowForm(edited, workflow, revision)).toBe(edited);
     expect(refreshWorkflowForm(edited, { ...workflow, modifiedAt: "v2", defaults: { steps: 44 } }, revision))
-      .toEqual({ workflowId: "local-1", steps: 44, randomSeed: true, generateTransparent: false });
+      .toEqual({ workflowId: "local-1", promptMode: "tags", steps: 44, randomSeed: true, generateTransparent: false });
     expect(getWorkflowRevision({ id: "fallback", fields: [] })).toContain('"fields":[]');
   });
 

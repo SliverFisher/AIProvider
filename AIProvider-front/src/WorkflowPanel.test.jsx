@@ -78,7 +78,7 @@ describe("WorkflowPanel generation action", () => {
       fieldKeys={["positivePrompt", "negativePrompt"]} fieldSpecs={{ positivePrompt: {}, negativePrompt: {} }} values={{ positivePrompt: "p", negativePrompt: "n" }}
       referenceFiles={{}} presets={[{ id: 7, name: "结构化方案" }]} presetQuery="7" presetSaveName="" disabled={{ blocked: false, busy: false }} loading={false}
       onWorkflowChange={vi.fn()} onFieldChange={vi.fn()} onReference={vi.fn()} onPresetChange={vi.fn()} onPresetSaveNameChange={vi.fn()} onSavePreset={vi.fn()} onReloadPreset={reload} onEditPreset={edit} onGenerate={vi.fn()} />);
-    expect(screen.getByRole("option", { name: "结构化方案" }).value).toBe("7");
+    expect(screen.getByRole("option", { name: "[标签式] 结构化方案" }).value).toBe("7");
     expect(screen.queryByRole("textbox", { name: "新 Prompt 方案名称" })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "另存为方案" }));
     expect(screen.getByRole("dialog", { name: "另存为 Prompt 方案" })).toBeTruthy();
@@ -116,6 +116,25 @@ describe("WorkflowPanel generation action", () => {
       onWorkflowChange={vi.fn()} onFieldChange={vi.fn()} onReference={vi.fn()} onPresetChange={vi.fn()} onGenerate={vi.fn()} />);
     expect(screen.getByRole("combobox", { name: "最终输出尺寸" })).toBeTruthy();
     expect(screen.queryByText("最终输出尺寸", { exact: true })).toBeNull();
+  });
+
+  it("provides a dedicated prose editor and persists translation through the prose endpoint", async () => {
+    const changeMode = vi.fn();
+    const change = vi.fn();
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => ({ code: 200, data: { positivePrompt: "完整场景。", negativePrompt: "不要文字。" } }) }));
+    render(<WorkflowPanel workflows={[{ id: "flux", name: "Flux" }]} workflow={{ id: "flux", name: "Flux", capabilities: {} }}
+      fieldKeys={["positivePrompt", "negativePrompt"]} fieldSpecs={{ positivePrompt: {}, negativePrompt: {} }}
+      values={{ promptMode: "prose", positivePrompt: "A complete scene.", negativePrompt: "No text." }} referenceFiles={{}}
+      presets={[{ id: 8, name: "Flux 长文", promptMode: "prose" }]} presetQuery="8" disabled={{ blocked: false, busy: false }} loading={false}
+      onWorkflowChange={vi.fn()} onFieldChange={change} onPromptModeChange={changeMode} onReference={vi.fn()} onPresetChange={vi.fn()} onGenerate={vi.fn()} />);
+
+    expect(screen.getByRole("option", { name: "[长文式] Flux 长文" })).toBeTruthy();
+    expect(screen.getByLabelText("生成长文正向描述").value).toBe("A complete scene.");
+    expect(screen.queryByRole("button", { name: "手气不错" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "翻译为中文" }));
+    expect((await screen.findByLabelText("生成长文正向译文")).value).toBe("完整场景。");
+    fireEvent.click(screen.getByRole("radio", { name: /标签式/ }));
+    expect(changeMode).toHaveBeenCalledWith("tags");
   });
 
   it("places the main model on its own row before the seed and generation-count row", () => {

@@ -2,22 +2,27 @@ package com.aiprovider.service;
 import com.aiprovider.model.dto.ComfyTaskRecordDTO;
 import com.aiprovider.repository.ComfyTaskRepository;
 import org.springframework.stereotype.Service;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import java.util.*;
 
 @Service
 public class ComfyTaskService {
+    private static final Logger log = LoggerFactory.getLogger(ComfyTaskService.class);
     private final ComfyTaskRepository repository;
     public ComfyTaskService(ComfyTaskRepository repository) { this.repository = repository; }
 
     public void save(ComfyTaskRecordDTO dto) {
         prepare(dto);
-        repository.save(dto);
+        int affected = repository.save(dto);
+        logMutation("save", Collections.singletonList(dto.getPromptId()), 1, affected);
     }
 
     public void saveBatch(List<ComfyTaskRecordDTO> items) {
         if (items == null || items.isEmpty() || items.size() > 1000) throw new IllegalArgumentException("批量任务数量必须在 1 到 1000 之间");
         items.forEach(this::prepare);
-        repository.saveBatch(items);
+        int affected = repository.saveBatch(items);
+        logMutation("saveBatch", items.stream().map(ComfyTaskRecordDTO::getPromptId).toList(), items.size(), affected);
     }
 
     public Map<String,Object> duplicate(String workflowId, String hash) {
@@ -49,6 +54,9 @@ public class ComfyTaskService {
         if (blank(dto.getWorkflowName())) dto.setWorkflowName(dto.getWorkflowId());
         if (blank(dto.getParametersJson())) dto.setParametersJson("{}");
         if (blank(dto.getStatus())) dto.setStatus("QUEUED");
+        String promptMode = blank(dto.getPromptMode()) ? "tags" : dto.getPromptMode().trim().toLowerCase(Locale.ROOT);
+        if (!"tags".equals(promptMode) && !"prose".equals(promptMode)) throw new IllegalArgumentException("Prompt 类型只能是 tags 或 prose");
+        dto.setPromptMode(promptMode);
     }
 
     private void validateHash(String workflowId, String hash) {
@@ -56,4 +64,11 @@ public class ComfyTaskService {
     }
 
     private static boolean blank(String value) { return value == null || value.trim().isEmpty(); }
+    private static void logMutation(String operation, List<String> ids, int requested, int affected) {
+        if (affected == requested) log.info("comfy_task_mutation operation={} ids={} requestedCount={} affectedRows={}", operation, ids, requested, affected);
+        else {
+            log.warn("comfy_task_mutation_mismatch operation={} ids={} requestedCount={} affectedRows={}", operation, ids, requested, affected);
+            throw new IllegalStateException("生成任务保存影响行数不一致");
+        }
+    }
 }

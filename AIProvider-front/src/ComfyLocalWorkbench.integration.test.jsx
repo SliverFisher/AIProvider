@@ -178,7 +178,7 @@ describe("Comfy image generation flow", () => {
       if (url === "/api/prompt-options/config") return json({ code: 200, data: { generalNegativePrompt: "" } });
       if (url === "/api/prompt-options/analyze") return json({ code: 200, data: [] });
       if (url.startsWith("/api/prompt-options?")) return json({ code: 200, data: { items: [], total: 0, pages: 0, page: 1, pageSize: 100 } });
-      if (url.includes("/api/comfy-presets")) return json({ code: 200, data: [{ id: 2, name: "扶她0", promptMode: "tags", isDefault: presetIsDefault, selectedOptions: { characterCount: [], characterTypes: [], relationships: [], actions: [], clothing: [], expression: [], pose: [], cameraAngle: [], shotType: [], scene: [], composition: [], quality: [] }, positiveExtra: "", negativeExtra: "", positivePrompt: presetPositivePrompt, negativePrompt: "preset negative", remark: "" }] });
+      if (url.includes("/api/comfy-presets")) return json({ code: 200, data: [{ id: 2, name: "扶她0", promptMode: "tags", isDefault: presetIsDefault, selectedOptions: { characterCount: [], characterTypes: [], relationships: [], actions: [], clothing: [], expression: [], pose: [], cameraAngle: [], shotType: [], scene: [], composition: [], quality: [] }, positiveExtra: "", negativeExtra: "", positivePrompt: presetPositivePrompt, negativePrompt: "preset negative", remark: "" }, { id: 3, name: "Flux 长文", promptMode: "prose", isDefault: false, selectedOptions: {}, positiveExtra: "", negativeExtra: "", positivePrompt: "A cinematic rainy street with a woman holding a silver umbrella.", negativePrompt: "No letters or watermark.", remark: "" }] });
       if (url.startsWith("/api/assets?")) {
         assetRequests += 1;
         return json({ code: 200, data: { page: 1, pages: 1, total: 1, items: [{ id: 12, platform: "Windows", localPath: "C:\\assets\\saved.png", localUrl: "http://127.0.0.1:32145/api/assets/file?path=saved.png", fileName: "saved.png", fileSize: 8 }] } });
@@ -339,6 +339,7 @@ describe("Comfy image generation flow", () => {
           definition: options.body.get("workflowDefinition"),
           positivePrompt: options.body.get("positivePrompt"),
           negativePrompt: options.body.get("negativePrompt"),
+          promptMode: options.body.get("promptMode"),
           checkpoint: options.body.get("checkpoint"),
         };
         submittedEditorData = options.body.get("node_5_editor_data");
@@ -614,7 +615,7 @@ describe("Comfy image generation flow", () => {
     fireEvent.click(btns[1]);
     expect(screen.getByRole("textbox", { name: "正向提示词" })).toBeTruthy();
     expect(screen.getByRole("textbox", { name: "反向提示词" })).toBeTruthy();
-    expect(screen.getByRole("option", { name: "扶她0" }).value).toBe("2");
+    expect(screen.getByRole("option", { name: "[标签式] 扶她0" }).value).toBe("2");
     fireEvent.change(schemes, { target: { value: "2" } });
     fireEvent.click(screen.getAllByRole("button", { name: "手动编辑" })[0]);
     const positivePrompt = screen.getByRole("textbox", { name: "正向提示词" });
@@ -628,10 +629,10 @@ describe("Comfy image generation flow", () => {
   it("keeps every Prompt scheme available after switching workflows", async () => {
     render(<ComfyLocalWorkbench />);
     let schemes = await screen.findByRole("combobox", { name: "Prompt 方案" });
-    expect(Array.from(schemes.options).some((option) => option.text === "扶她0")).toBe(true);
+    expect(Array.from(schemes.options).some((option) => option.text === "[标签式] 扶她0")).toBe(true);
     fireEvent.change(screen.getByRole("combobox", { name: "当前生成工作流" }), { target: { value: "futa02" } });
     schemes = screen.getByRole("combobox", { name: "Prompt 方案" });
-    expect(Array.from(schemes.options).some((option) => option.text === "扶她0")).toBe(true);
+    expect(Array.from(schemes.options).some((option) => option.text === "[标签式] 扶她0")).toBe(true);
   });
 
   it("automatically applies the scheme marked as default", async () => {
@@ -698,6 +699,18 @@ describe("Comfy image generation flow", () => {
     await waitFor(() => expect(taskRecordBatchBody).toHaveLength(3));
     expect(screen.getByText("已一次提交 3 个任务到 Bridge 队列")).toBeTruthy();
   });
+
+  it("applies a prose scheme and carries its mode through generation and image persistence", async () => {
+    render(<ComfyLocalWorkbench />);
+    const schemes = await screen.findByRole("combobox", { name: "Prompt 方案" });
+    fireEvent.change(schemes, { target: { value: "3" } });
+    expect(screen.getByLabelText("生成长文正向描述").value).toContain("silver umbrella");
+    expect(screen.queryByRole("button", { name: "手气不错" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "开始生成" }));
+
+    await waitFor(() => expect(submittedWorkflow?.promptMode).toBe("prose"));
+    await waitFor(() => expect(localImageBatchBody?.items?.[0]).toMatchObject({ promptMode: "prose", promptSchemeName: "Flux 长文" }), { timeout: 10000 });
+  }, 15000);
 
   it("batch-removes missing local rows and reloads the corrected total and pages", async () => {
     staleLocalGallery = true;

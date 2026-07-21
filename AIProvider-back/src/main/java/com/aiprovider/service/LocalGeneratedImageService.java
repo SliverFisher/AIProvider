@@ -40,6 +40,8 @@ public class LocalGeneratedImageService {
             item.setMimeType(clean(item.getMimeType(), 100));
             item.setWorkflowId(clean(item.getWorkflowId(), 100));
             item.setWorkflowName(clean(item.getWorkflowName(), 255));
+            item.setPromptSchemeName(clean(item.getPromptSchemeName(), 255));
+            item.setPromptMode(promptMode(item.getPromptMode()));
             item.setPrompt(clean(item.getPrompt(), 16000));
             item.setNegativePrompt(clean(item.getNegativePrompt(), 16000));
             item.setMainModel(clean(item.getMainModel(), 1000));
@@ -118,6 +120,11 @@ public class LocalGeneratedImageService {
         if (!status.equals("ACTIVE") && !status.equals("TRASHED"))
             throw new IllegalArgumentException("status 仅支持 ACTIVE 或 TRASHED");
         return status;
+    }
+    private static String promptMode(String value) {
+        String mode = value == null || value.trim().isEmpty() ? "tags" : value.trim().toLowerCase(Locale.ROOT);
+        if (!mode.equals("tags") && !mode.equals("prose")) throw new IllegalArgumentException("Prompt 类型只能是 tags 或 prose");
+        return mode;
     }
     private static List<Long> validIds(LocalGeneratedImageIdsDTO dto) {
         List<Long> ids = new ArrayList<>(new LinkedHashSet<>(dto == null || dto.getIds() == null

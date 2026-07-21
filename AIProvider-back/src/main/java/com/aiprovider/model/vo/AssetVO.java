@@ -25,6 +25,8 @@ public class AssetVO {
     private final String sampler;
     private final String scheduler;
     private final String workflowId;
+    private final String promptSchemeName;
+    private final String promptMode;
     private final LocalDateTime generatedAt;
     private final LocalDateTime generationCompletedAt;
     private final Long generationDurationMs;
@@ -32,12 +34,12 @@ public class AssetVO {
 
     public AssetVO(long id, String platform, String localPath, String localUrl, String fileName, long fileSize,
                    Integer width, Integer height, String assetType, String mimeType, String status, String trashOriginalStatus, String prompt, String negativePrompt, String mainModel, String lorasJson, Long seed,
-                   Integer steps, Double cfg, String sampler, String scheduler, String workflowId,
+                   Integer steps, Double cfg, String sampler, String scheduler, String workflowId, String promptSchemeName, String promptMode,
                    LocalDateTime generatedAt, LocalDateTime generationCompletedAt, Long generationDurationMs, LocalDateTime createdAt) {
         this.id = id; this.platform = platform; this.localPath = localPath; this.localUrl = localUrl; this.fileName = fileName;
         this.fileSize = fileSize; this.width = width; this.height = height; this.assetType = assetType; this.mimeType = mimeType; this.status = status; this.trashOriginalStatus = trashOriginalStatus; this.prompt = prompt;
         this.negativePrompt = negativePrompt; this.mainModel = mainModel; this.lorasJson = lorasJson; this.seed = seed; this.steps = steps; this.cfg = cfg;
-        this.sampler = sampler; this.scheduler = scheduler; this.workflowId = workflowId;
+        this.sampler = sampler; this.scheduler = scheduler; this.workflowId = workflowId; this.promptSchemeName = promptSchemeName; this.promptMode = promptMode;
         this.generatedAt = generatedAt; this.generationCompletedAt = generationCompletedAt;
         this.generationDurationMs = generationDurationMs; this.createdAt = createdAt;
     }
@@ -63,6 +65,8 @@ public class AssetVO {
     public String getSampler() { return sampler; }
     public String getScheduler() { return scheduler; }
     public String getWorkflowId() { return workflowId; }
+    public String getPromptSchemeName() { return promptSchemeName; }
+    public String getPromptMode() { return promptMode; }
     public LocalDateTime getGeneratedAt() { return generatedAt; }
     public LocalDateTime getGenerationCompletedAt() { return generationCompletedAt; }
     public Long getGenerationDurationMs() { return generationDurationMs; }

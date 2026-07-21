@@ -53,9 +53,9 @@ const executedMainModel = (historyItem) => {
   }
   return "";
 };
-function PromptViewToggle({ value, onChange }) {
+function PromptViewToggle({ value, onChange, promptMode = "tags" }) {
   return <div className="prompt-view-toggle" aria-label="Prompt 显示方式">
-    <button type="button" aria-pressed={value === "zh"} onClick={() => onChange("zh")}>中文映射</button>
+    <button type="button" aria-pressed={value === "zh"} onClick={() => onChange("zh")}>{promptMode === "prose" ? "中文翻译" : "中文映射"}</button>
     <button type="button" aria-pressed={value === "raw"} onClick={() => onChange("raw")}>原始 Prompt</button>
   </div>;
 }
@@ -110,6 +110,7 @@ const persistActiveTasks = (items) => {
       workflowId: task.workflowId,
       workflowName: task.workflowName,
       promptSchemeName: task.promptSchemeName,
+      promptMode: task.promptMode || task.form?.promptMode || "tags",
       mainModel: task.mainModel,
       finalOutputNodeId: task.finalOutputNodeId,
       batchRunId: task.batchRunId,
@@ -211,7 +212,7 @@ const assetRecordToGalleryEntry = (item) => ({
   id: `asset-${item.id}`, assetId: item.id, source: "asset", platform: item.platform,
   status: item.status, trashOriginalStatus: item.trashOriginalStatus,
   prompt: item.prompt, negativePrompt: item.negativePrompt, mainModel: item.mainModel, loras: parseLoras(item.lorasJson), seed: item.seed, steps: item.steps,
-  cfg: item.cfg, sampler: item.sampler, scheduler: item.scheduler, workflowId: item.workflowId,
+  cfg: item.cfg, sampler: item.sampler, scheduler: item.scheduler, workflowId: item.workflowId, promptSchemeName: item.promptSchemeName, promptMode: item.promptMode || "tags",
   width: item.width, height: item.height, createdAt: item.generatedAt || item.createdAt,
   generationCompletedAt: item.generationCompletedAt, generationDurationMs: item.generationDurationMs,
   images: [{ path: item.localPath, localUrl: item.localUrl, filename: item.fileName, sizeBytes: item.fileSize, width: item.width, height: item.height, mediaType: item.assetType || item.mediaType, mimeType: item.mimeType }],
@@ -220,7 +221,7 @@ const localRecordToGalleryEntry = (item) => ({
   id: `local-${item.id ?? item.recordId}`, recordId: item.id ?? item.recordId, source: "local", platform: item.platform,
   status: item.status || "ACTIVE", promptId: item.promptId, prompt: item.prompt, negativePrompt: item.negativePrompt,
   mainModel: item.mainModel, loras: parseLoras(item.lorasJson), seed: item.seed, steps: item.steps, cfg: item.cfg,
-  sampler: item.sampler, scheduler: item.scheduler, workflowId: item.workflowId, workflowName: item.workflowName,
+  sampler: item.sampler, scheduler: item.scheduler, workflowId: item.workflowId, workflowName: item.workflowName, promptSchemeName: item.promptSchemeName, promptMode: item.promptMode || "tags",
   width: item.width, height: item.height, createdAt: item.taskCreatedAt || item.generatedAt || item.createdAt,
   generationCompletedAt: item.generationCompletedAt, generationDurationMs: item.generationDurationMs,
   images: [{ recordId: item.id ?? item.recordId, path: item.imagePath || item.localPath, filename: item.fileName, sizeBytes: item.fileSize, width: item.width, height: item.height, mediaType: item.mediaType, mimeType: item.mimeType }],
@@ -499,10 +500,11 @@ export default function ComfyLocalWorkbench({ mode = "workbench", active = true 
     if (detailPromptView !== "zh" || (!taskDetail && !infoDetail)) return undefined;
     const positivePrompt = String(taskDetail?.form?.positivePrompt ?? infoDetail?.item?.prompt ?? "");
     const negativePrompt = String(taskDetail?.form?.negativePrompt ?? infoDetail?.item?.negativePrompt ?? "");
-    const key = JSON.stringify([positivePrompt, negativePrompt]);
+    const promptMode = (taskDetail?.promptMode ?? taskDetail?.form?.promptMode ?? infoDetail?.item?.promptMode) === "prose" ? "prose" : "tags";
+    const key = JSON.stringify([promptMode, positivePrompt, negativePrompt]);
     const controller = new AbortController();
     setDetailPromptTranslation({ key, positivePrompt: "", negativePrompt: "", loading: true, error: "" });
-    fetch("/api/prompt-translations", {
+    fetch(promptMode === "prose" ? "/api/prompt-translations/prose" : "/api/prompt-translations", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ positivePrompt, negativePrompt }),
@@ -825,6 +827,7 @@ export default function ComfyLocalWorkbench({ mode = "workbench", active = true 
   }, [active, mode]);
   useEffect(() => {
     if (mode !== "workbench" || !active) return undefined;
+    if (form.promptMode === "prose") return undefined;
     const version = ++promptAnalysisVersion.current;
     const timer = window.setTimeout(() => {
       analyzeCurrentPromptOptions().catch((e) => {
@@ -832,7 +835,7 @@ export default function ComfyLocalWorkbench({ mode = "workbench", active = true 
       });
     }, 250);
     return () => window.clearTimeout(timer);
-  }, [active, analyzeCurrentPromptOptions, mode]);
+  }, [active, analyzeCurrentPromptOptions, form.promptMode, mode]);
   useEffect(() => {
     if (mode !== "workbench" || !active) return;
     const preset = presets.find((item) => item.isDefault);
@@ -906,7 +909,7 @@ export default function ComfyLocalWorkbench({ mode = "workbench", active = true 
     setPresetSaving(true);
     setError("");
     try {
-      const promptMode = mode === "overwrite" ? selected.promptMode : "tags";
+      const promptMode = mode === "overwrite" ? selected.promptMode : (form.promptMode === "prose" ? "prose" : "tags");
       if (promptMode !== "tags" && promptMode !== "prose") throw new Error("Prompt 方案类型无效，请重新加载方案");
       const matchedOptions = promptMode === "tags" ? await analyzePromptOptions(form.positivePrompt, form.negativePrompt) : [];
       const mappedSelections = promptMode === "tags" ? matchSelectedOptionsFromPrompt(form.positivePrompt, matchedOptions, PROMPT_CATEGORIES) : {};
@@ -1405,6 +1408,7 @@ export default function ComfyLocalWorkbench({ mode = "workbench", active = true 
       workflowId: entry.workflowId,
       workflowName: entry.workflowName,
       promptSchemeName: entry.promptSchemeName,
+      promptMode: entry.promptMode || "tags",
       prompt: entry.prompt,
       negativePrompt: entry.negativePrompt,
       mainModel: entry.mainModel,
@@ -1467,6 +1471,7 @@ export default function ComfyLocalWorkbench({ mode = "workbench", active = true 
       workflowId: task?.workflowId || form.workflowId,
       workflowName: task?.workflowName,
       promptSchemeName: task?.promptSchemeName || form.promptSchemeName || "",
+      promptMode: task?.promptMode || form.promptMode || "tags",
       width: form.width,
       height: form.height,
       createdAt: task?.createdAt || new Date().toISOString(),
@@ -1701,6 +1706,7 @@ export default function ComfyLocalWorkbench({ mode = "workbench", active = true 
         workflowName: active.name || active.id,
         mainModel: submissionForm.checkpoint || "",
         promptSchemeName: appliedPresetTitle || "",
+        promptMode: submissionForm.promptMode || "tags",
         inputSha256,
         inputImages: Object.entries(submissionReferences).filter(([, file]) => file instanceof File).map(([key, file]) => ({ key, name: file.name, url: URL.createObjectURL(file) })),
         finalOutputNodeId: data.finalOutputNodeId,
@@ -1717,7 +1723,7 @@ export default function ComfyLocalWorkbench({ mode = "workbench", active = true 
         persistActiveTasks(next);
         return next;
       });
-      fetch("/api/comfy-tasks", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ promptId: nextTask.id, workflowId: nextTask.workflowId, workflowName: nextTask.workflowName, promptSchemeName: nextTask.promptSchemeName, positivePrompt: submissionForm.positivePrompt || "", negativePrompt: submissionForm.negativePrompt || "", mainModel: submissionForm.checkpoint || "", parametersJson: JSON.stringify(submissionForm), inputFile: nextTask.inputImages?.[0]?.name || null, inputFileName: nextTask.inputImages?.[0]?.name || null, inputSha256, status: "QUEUED" }) }).catch((exception) => reportLocalError("comfy-task-record", exception, { promptId: nextTask.id }));
+      fetch("/api/comfy-tasks", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ promptId: nextTask.id, workflowId: nextTask.workflowId, workflowName: nextTask.workflowName, promptSchemeName: nextTask.promptSchemeName, promptMode: nextTask.promptMode, positivePrompt: submissionForm.positivePrompt || "", negativePrompt: submissionForm.negativePrompt || "", mainModel: submissionForm.checkpoint || "", parametersJson: JSON.stringify(submissionForm), inputFile: nextTask.inputImages?.[0]?.name || null, inputFileName: nextTask.inputImages?.[0]?.name || null, inputSha256, status: "QUEUED" }) }).catch((exception) => reportLocalError("comfy-task-record", exception, { promptId: nextTask.id }));
       return nextTask;
   };
   const scheduleGenerations = async (total, buildSubmissionForm, completionLabel = "任务") => {
@@ -1795,7 +1801,7 @@ export default function ComfyLocalWorkbench({ mode = "workbench", active = true 
           bridgeState: cancelAllRequested.current ? "CANCEL_REQUESTED" : (task.state || "PENDING"), progress: 0,
           form: { ...submission, workflowId: active.id }, workflowId: active.id, workflowName: active.name || active.id,
           mainModel: submission.checkpoint || "",
-          promptSchemeName: appliedPresetTitle || "", inputSha256: null, inputImages, finalOutputNodeId: task.finalOutputNodeId,
+          promptSchemeName: appliedPresetTitle || "", promptMode: submission.promptMode || "tags", inputSha256: null, inputImages, finalOutputNodeId: task.finalOutputNodeId,
           progressPlan, progressDetail: null, actualSeed: task.actualSeed, batchRunId, folder, createdAt,
         };
       });
@@ -1813,7 +1819,7 @@ export default function ComfyLocalWorkbench({ mode = "workbench", active = true 
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify(nextTasks.map((task, index) => ({
           promptId: task.id, workflowId: task.workflowId, workflowName: task.workflowName,
-          promptSchemeName: task.promptSchemeName, positivePrompt: submissions[index].positivePrompt || "",
+          promptSchemeName: task.promptSchemeName, promptMode: task.promptMode, positivePrompt: submissions[index].positivePrompt || "",
           negativePrompt: submissions[index].negativePrompt || "", mainModel: submissions[index].checkpoint || "",
           parametersJson: JSON.stringify(submissions[index]), inputFile: inputImages[0]?.name || null,
           inputFileName: inputImages[0]?.name || null, inputSha256: null, status: task.state,
@@ -2106,6 +2112,7 @@ export default function ComfyLocalWorkbench({ mode = "workbench", active = true 
         workflowId: workflow.id,
         workflowName: workflow.name || workflow.id,
         promptSchemeName: appliedPresetTitle || "",
+        promptMode: batchForm.promptMode || "tags",
         inputSha256: prepared[index].hash,
         inputImages: [{ key: "sourceImage", name: prepared[index].file.name, url: prepared[index].image.url }],
         finalOutputNodeId: task.finalOutputNodeId,
@@ -2126,7 +2133,7 @@ export default function ComfyLocalWorkbench({ mode = "workbench", active = true 
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify(nextTasks.map((task) => ({
           promptId: task.id, workflowId: task.workflowId, workflowName: task.workflowName,
-          promptSchemeName: task.promptSchemeName, positivePrompt: batchForm.positivePrompt || "",
+          promptSchemeName: task.promptSchemeName, promptMode: task.promptMode, positivePrompt: batchForm.positivePrompt || "",
           negativePrompt: batchForm.negativePrompt || "", mainModel: batchForm.checkpoint || "",
           parametersJson: JSON.stringify(batchForm), inputFile: task.inputImages[0].name,
           inputFileName: task.inputImages[0].name, inputSha256: task.inputSha256, status: "QUEUED",
@@ -2300,6 +2307,8 @@ export default function ComfyLocalWorkbench({ mode = "workbench", active = true 
           sampler: source?.sampler,
           scheduler: source?.scheduler,
           workflowId: source?.workflowId,
+          promptSchemeName: source?.promptSchemeName,
+          promptMode: source?.promptMode || "tags",
           generatedAt: source?.createdAt,
           generationCompletedAt: source?.generationCompletedAt,
           generationDurationMs: source?.generationDurationMs,
@@ -2360,6 +2369,7 @@ export default function ComfyLocalWorkbench({ mode = "workbench", active = true 
           lorasJson: JSON.stringify(parseLoras(source?.item.loras)), seed: source?.item.seed,
           steps: source?.item.steps, cfg: source?.item.cfg, sampler: source?.item.sampler,
           scheduler: source?.item.scheduler, workflowId: source?.item.workflowId,
+          promptSchemeName: source?.item.promptSchemeName, promptMode: source?.item.promptMode || "tags",
           generatedAt: source?.item.createdAt,
           generationCompletedAt: source?.item.generationCompletedAt,
           generationDurationMs: source?.item.generationDurationMs,
@@ -2741,7 +2751,15 @@ export default function ComfyLocalWorkbench({ mode = "workbench", active = true 
     const data = await readJson(response, "打开资产所在文件夹接口");
     if (!response.ok) throw new Error(data.message || "打开文件夹失败");
   };
-  const set = (key, value) => setForm((x) => ({ ...x, [key]: value }));
+    const set = (key, value) => setForm((x) => ({ ...x, [key]: value }));
+    const setPromptMode = (promptMode) => {
+      if (promptMode !== "tags" && promptMode !== "prose") return;
+      setForm((current) => ({ ...current, promptMode }));
+      setPresetQuery("");
+      setSelectedPresetId("");
+      setAppliedPresetTitle("");
+      setError("");
+    };
   const selectWorkflow = (workflowId) => {
     const workflow = workflows.find((item) => item.id === workflowId);
     if (!workflow) return;
@@ -3010,7 +3028,7 @@ export default function ComfyLocalWorkbench({ mode = "workbench", active = true 
           <h2>生成参数</h2>
           <WorkflowPanel
             workflows={workflows} loading={workflowLoading} workflow={activeWorkflow}
-            fieldKeys={activeWorkflowFields} fieldSpecs={activeWorkflow?.binding?.fields || {}} values={form} onFieldChange={set}
+            fieldKeys={activeWorkflowFields} fieldSpecs={activeWorkflow?.binding?.fields || {}} values={form} onFieldChange={set} onPromptModeChange={setPromptMode}
             onWorkflowChange={selectWorkflow} referenceFiles={referenceFiles} onReference={chooseReference}
             onReferenceDrop={dropHistoryImageAsReference}
             loraModels={loraModels} loraModelsLoading={loraModelsLoading}
@@ -3246,13 +3264,14 @@ export default function ComfyLocalWorkbench({ mode = "workbench", active = true 
       </div>}
       {taskDetail && <div className="history-modal task-detail-modal" role="dialog" aria-modal="true" aria-labelledby="task-detail-title" onMouseDown={(event) => event.target === event.currentTarget && setTaskDetail(null)}>
         <div className="task-detail-panel">
-          <header><div className="detail-header-title"><span>任务详情</span><h3 id="task-detail-title">{taskDetail.workflowName || "当前工作流"}</h3></div><div className="detail-header-actions"><PromptViewToggle value={detailPromptView} onChange={setDetailPromptView} /><button className="detail-close-button" type="button" onClick={() => setTaskDetail(null)} aria-label="关闭任务详情"><X /></button></div></header>
+          <header><div className="detail-header-title"><span>任务详情</span><h3 id="task-detail-title">{taskDetail.workflowName || "当前工作流"}</h3></div><div className="detail-header-actions"><PromptViewToggle value={detailPromptView} onChange={setDetailPromptView} promptMode={taskDetail.promptMode || taskDetail.form?.promptMode} /><button className="detail-close-button" type="button" onClick={() => setTaskDetail(null)} aria-label="关闭任务详情"><X /></button></div></header>
           <div className="task-detail-summary">
             <span><small>状态</small>{taskDetail.state === "RUNNING" ? "生成中" : taskDetail.state === "QUEUED" ? "排队中" : taskDetail.state === "FAILED" ? "失败" : taskDetail.state}</span>
             <span><small>任务类型</small>{taskDetail.sourceType === "COMFYUI" || taskDetail.external ? "ComfyUI 外部任务" : "AIProvider 创建任务"}</span>
             <span><small>已运行</small><TaskElapsed task={taskDetail} /></span>
             <span><small>进度</small>{taskDetail.progress == null ? "读取中" : `${Math.round(taskDetail.progress)}%`}</span>
             <span><small>Prompt 方案</small>{taskDetail.promptSchemeName || taskDetail.form?.promptSchemeName || "未使用方案"}</span>
+            <span><small>Prompt 类型</small>{(taskDetail.promptMode || taskDetail.form?.promptMode) === "prose" ? "长文式" : "标签式"}</span>
             <span><small>主模型</small>{taskDetail.mainModel || taskDetail.form?.checkpoint || "未记录"}</span>
             <span><small>任务 ID</small>{taskDetail.id}</span>
           </div>
@@ -3272,10 +3291,11 @@ export default function ComfyLocalWorkbench({ mode = "workbench", active = true 
       </div>}
       {infoDetail && <div className="history-modal image-info-modal" role="dialog" aria-modal="true" aria-labelledby="image-info-title" onMouseDown={(event) => event.target === event.currentTarget && setInfoDetail(null)}>
         <div className="image-info-panel">
-          <header><div className="detail-header-title"><span>{infoDetail.item.source === "asset" ? "资产详情" : "本机图片详情"}</span><h3 id="image-info-title">{infoDetail.image.filename || "图片信息"}</h3></div><div className="detail-header-actions"><PromptViewToggle value={detailPromptView} onChange={setDetailPromptView} /><button className="detail-close-button" type="button" aria-label="关闭图片详情" onClick={() => setInfoDetail(null)}><X /></button></div></header>
+          <header><div className="detail-header-title"><span>{infoDetail.item.source === "asset" ? "资产详情" : "本机图片详情"}</span><h3 id="image-info-title">{infoDetail.image.filename || "图片信息"}</h3></div><div className="detail-header-actions"><PromptViewToggle value={detailPromptView} onChange={setDetailPromptView} promptMode={infoDetail.item.promptMode} /><button className="detail-close-button" type="button" aria-label="关闭图片详情" onClick={() => setInfoDetail(null)}><X /></button></div></header>
           <div className="image-info-summary">
             <span><small>工作流</small>{infoDetail.item.workflowName || workflows.find((entry) => entry.id === infoDetail.item.workflowId)?.name || infoDetail.item.workflowId || "未记录"}</span>
             <span><small>Prompt 方案</small>{infoDetail.item.promptSchemeName || "未使用方案"}</span>
+            <span><small>Prompt 类型</small>{infoDetail.item.promptMode === "prose" ? "长文式" : "标签式"}</span>
             <span><small>主模型</small>{modelDisplayName(infoDetail.item.mainModel) || "未记录"}</span>
             <span><small>分辨率</small>{infoDetail.image.width || infoDetail.item.width || "-"} × {infoDetail.image.height || infoDetail.item.height || "-"}</span>
             <span><small>生成平台</small>{infoDetail.item.platform || platform || "未记录"}</span>
