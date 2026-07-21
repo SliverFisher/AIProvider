@@ -27,6 +27,21 @@ import { buildLuckyPrompts } from "./luckyPrompt";
 const BRIDGE = "http://127.0.0.1:32145";
 const BRIDGE_LAUNCH_URL = "aiprovider-bridge://start";
 const initial = FALLBACK_FORM;
+const videoMimeTypes = { mp4: "video/mp4", webm: "video/webm", mov: "video/quicktime", m4v: "video/x-m4v" };
+const mediaExtension = (item) => String(item?.filename || item?.fileName || item?.path || item?.imagePath || item?.localPath || "").split(/[?#]/)[0].split(".").pop().toLowerCase();
+const isVideoMedia = (item) => String(item?.mediaType || item?.assetType || "").toUpperCase() === "VIDEO"
+  || String(item?.mimeType || "").toLowerCase().startsWith("video/")
+  || Boolean(videoMimeTypes[mediaExtension(item)]);
+const mediaMetadata = (item, blobType = "") => {
+  const video = isVideoMedia(item) || String(blobType).toLowerCase().startsWith("video/");
+  const detectedVideoMime = videoMimeTypes[mediaExtension(item)];
+  return {
+    mediaType: video ? "VIDEO" : "IMAGE",
+    mimeType: video
+      ? (String(blobType).toLowerCase().startsWith("video/") ? blobType : item?.mimeType || detectedVideoMime || null)
+      : blobType || item?.mimeType || null,
+  };
+};
 const taskStateRank = { RUNNING: 0, CANCEL_REQUESTED: 1, QUEUED: 2, FAILED: 3 };
 const executedMainModel = (historyItem) => {
   const graph = Array.isArray(historyItem?.prompt) ? historyItem.prompt[2] : null;
@@ -199,7 +214,7 @@ const assetRecordToGalleryEntry = (item) => ({
   cfg: item.cfg, sampler: item.sampler, scheduler: item.scheduler, workflowId: item.workflowId,
   width: item.width, height: item.height, createdAt: item.generatedAt || item.createdAt,
   generationCompletedAt: item.generationCompletedAt, generationDurationMs: item.generationDurationMs,
-  images: [{ path: item.localPath, localUrl: item.localUrl, filename: item.fileName, sizeBytes: item.fileSize, width: item.width, height: item.height }],
+  images: [{ path: item.localPath, localUrl: item.localUrl, filename: item.fileName, sizeBytes: item.fileSize, width: item.width, height: item.height, mediaType: item.assetType || item.mediaType, mimeType: item.mimeType }],
 });
 const localRecordToGalleryEntry = (item) => ({
   id: `local-${item.id ?? item.recordId}`, recordId: item.id ?? item.recordId, source: "local", platform: item.platform,
@@ -208,7 +223,7 @@ const localRecordToGalleryEntry = (item) => ({
   sampler: item.sampler, scheduler: item.scheduler, workflowId: item.workflowId, workflowName: item.workflowName,
   width: item.width, height: item.height, createdAt: item.taskCreatedAt || item.generatedAt || item.createdAt,
   generationCompletedAt: item.generationCompletedAt, generationDurationMs: item.generationDurationMs,
-  images: [{ recordId: item.id ?? item.recordId, path: item.imagePath || item.localPath, filename: item.fileName, sizeBytes: item.fileSize, width: item.width, height: item.height }],
+  images: [{ recordId: item.id ?? item.recordId, path: item.imagePath || item.localPath, filename: item.fileName, sizeBytes: item.fileSize, width: item.width, height: item.height, mediaType: item.mediaType, mimeType: item.mimeType }],
 });
 const recycleRecordToGalleryEntry = (item) => item.source === "asset"
   ? assetRecordToGalleryEntry({ ...item, id: item.assetId || item.recordId })
@@ -286,7 +301,9 @@ const GalleryImageWall = memo(function GalleryImageWall({ entries, selectionMode
         onDragEnd={() => onAction("dragEnd", item, image)}
         onContextMenu={(event) => onAction("contextMenu", item, image, event)}
       >
-        <img src={image.url} alt="历史生成结果" draggable="false" />
+        {isVideoMedia(image)
+          ? <><video src={image.url} aria-label="历史生成视频" muted playsInline preload="auto" draggable="false" onLoadedMetadata={(event) => { if (Number.isFinite(event.currentTarget.duration) && event.currentTarget.duration > 0) event.currentTarget.currentTime = Math.min(0.1, event.currentTarget.duration / 2); }} /><span className="video-play-badge" aria-hidden="true"><Play weight="fill" /></span></>
+          : <img src={image.url} alt="历史生成结果" draggable="false" />}
         {item.source === "asset" && <span className="asset-platform-badge">{item.platform}</span>}
         {selectionMode && <i className="selection-mark">{selectedImages.has(key) ? "✓" : ""}</i>}
       </button>
@@ -1141,7 +1158,7 @@ export default function ComfyLocalWorkbench({ mode = "workbench", active = true 
               throw new Error("missing image");
             }
             const blob = await response.blob();
-            return { ...image, blob, url: URL.createObjectURL(blob), transparent: typeof recordedTransparency === "boolean" ? recordedTransparency : image.transparent ?? null };
+            return { ...image, ...mediaMetadata(image, blob.type), blob, url: URL.createObjectURL(blob), transparent: typeof recordedTransparency === "boolean" ? recordedTransparency : image.transparent ?? null };
           }),
         );
         const loadedImages = settledImages.filter((result) => result.status === "fulfilled").map((result) => result.value);
@@ -1337,10 +1354,10 @@ export default function ComfyLocalWorkbench({ mode = "workbench", active = true 
         type: image.type || "output",
       });
       const response = await call(`/comfy/view?${query}`, {}, 30000, authToken);
-      if (!response.ok) throw new Error(`读取生成图片失败（HTTP ${response.status}）`);
+      if (!response.ok) throw new Error(`读取生成媒体失败（HTTP ${response.status}）`);
       const blob = await response.blob();
       const path = image.path || [image.subfolder, image.filename].filter(Boolean).join("/");
-      return { ...image, path, blob, url: includeResultUrl ? URL.createObjectURL(blob) : null };
+      return { ...image, path, ...mediaMetadata(image, blob.type), blob, url: includeResultUrl ? URL.createObjectURL(blob) : null };
     }),
   );
   const addRecentOutputEntry = (entry) => replaceGallerySource("output", (source) => {
@@ -1383,6 +1400,8 @@ export default function ComfyLocalWorkbench({ mode = "workbench", active = true 
       promptId: String(entry.promptId),
       imagePath: image.path,
       fileName: image.filename,
+      mediaType: mediaMetadata(image, image.blob?.type).mediaType,
+      mimeType: mediaMetadata(image, image.blob?.type).mimeType,
       workflowId: entry.workflowId,
       workflowName: entry.workflowName,
       promptSchemeName: entry.promptSchemeName,
@@ -1401,16 +1420,16 @@ export default function ComfyLocalWorkbench({ mode = "workbench", active = true 
       generationCompletedAt: entry.generationCompletedAt,
       generationDurationMs: entry.generationDurationMs,
     }));
-    if (!items.length) throw new Error("本机生成记录没有精确图片路径");
+    if (!items.length) throw new Error("本机生成记录没有精确媒体路径");
     const response = await fetch("/api/local-generated-images/batch", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ platform, items }),
     });
-    const data = await readJson(response, "本机生成图片异步记录接口");
+    const data = await readJson(response, "本机生成媒体异步记录接口");
     if (!response.ok || data.code !== 200) throw new Error(data.message || `HTTP ${response.status}`);
     const records = data.data?.items || [];
-    if (records.length !== items.length) throw new Error("后端没有返回全部本机图片数据库 ID");
+    if (records.length !== items.length) throw new Error("后端没有返回全部本机媒体数据库 ID");
     const recordPathKey = (value) => {
       const normalized = String(value || "").replace(/\\/g, "/");
       return platform === "Windows" ? normalized.toLowerCase() : normalized;
@@ -1421,8 +1440,8 @@ export default function ComfyLocalWorkbench({ mode = "workbench", active = true 
       recordId: records[0]?.id,
       images: entry.images.map((image) => {
         const record = recordsByPath.get(recordPathKey(image.path));
-        if (!record?.id) throw new Error(`后端没有返回本机图片数据库 ID：${image.path}`);
-        return { ...image, recordId: record.id };
+        if (!record?.id) throw new Error(`后端没有返回本机媒体数据库 ID：${image.path}`);
+        return { ...image, recordId: record.id, mediaType: record.mediaType || image.mediaType, mimeType: record.mimeType || image.mimeType };
       }),
     };
   };
@@ -3208,7 +3227,7 @@ export default function ComfyLocalWorkbench({ mode = "workbench", active = true 
         </div>
       )}
       {imageMenu && <div className="image-context-menu" style={{ left: imageMenu.x, top: imageMenu.y }} onClick={(event) => event.stopPropagation()}>
-        <button type="button" onClick={() => contextCopy()}><Copy />复制图片</button>
+        {!isVideoMedia(imageMenu.image) && <button type="button" onClick={() => contextCopy()}><Copy />复制图片</button>}
         <button type="button" onClick={() => contextOpenFolder()}><FolderOpen />打开所在文件夹</button>
         {galleryMode !== "trash" && <button type="button" onClick={() => contextTransfer()}><TrayArrowUp />转到文件中转站</button>}
         {galleryMode === "assets" && <button type="button" onClick={contextFavorite}><Star weight="fill" />转到我的最爱</button>}
@@ -3288,6 +3307,7 @@ export default function ComfyLocalWorkbench({ mode = "workbench", active = true 
           index={detail.index}
           total={detail.images.length}
           src={image.url}
+          isVideo={isVideoMedia(image)}
           alt="历史生成结果"
           onClose={closeDetail}
           onNavigate={navigateDetail}
@@ -3295,7 +3315,7 @@ export default function ComfyLocalWorkbench({ mode = "workbench", active = true 
             event.preventDefault();
             setImageMenu({ x: Math.min(event.clientX, window.innerWidth - 190), y: Math.min(event.clientY, window.innerHeight - 320), item: image.task, image, viewer: true });
           }}
-          actions={<><button type="button" onClick={() => copyGalleryImage(image)} title="复制图片" aria-label="复制当前图片"><Copy /></button><button type="button" onClick={() => openImageInfo(image.task, image)} title="查看详细信息" aria-label="查看图片详细信息"><Info /></button></>}
+          actions={<>{!isVideoMedia(image) && <button type="button" onClick={() => copyGalleryImage(image)} title="复制图片" aria-label="复制当前图片"><Copy /></button>}<button type="button" onClick={() => openImageInfo(image.task, image)} title="查看详细信息" aria-label="查看媒体详细信息"><Info /></button></>}
         />;
       })()}
     </div>

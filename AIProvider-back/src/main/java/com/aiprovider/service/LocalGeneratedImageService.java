@@ -36,6 +36,8 @@ public class LocalGeneratedImageService {
             if (!paths.add(pathKey)) throw new IllegalArgumentException("同一批次包含重复图片路径：" + path);
             item.setImagePath(path);
             item.setFileName(clean(item.getFileName(), 255));
+            item.setMediaType(item.getMediaType().trim().toUpperCase(Locale.ROOT));
+            item.setMimeType(clean(item.getMimeType(), 100));
             item.setWorkflowId(clean(item.getWorkflowId(), 100));
             item.setWorkflowName(clean(item.getWorkflowName(), 255));
             item.setPrompt(clean(item.getPrompt(), 16000));
@@ -97,11 +99,14 @@ public class LocalGeneratedImageService {
     }
 
     private static void validate(LocalGeneratedImageItemDTO item) {
-        if (item == null) throw new IllegalArgumentException("本机生成图片记录不能为空");
+        if (item == null) throw new IllegalArgumentException("本机生成媒体记录不能为空");
         if (item.getPromptId() == null || item.getPromptId().trim().isEmpty() || item.getPromptId().length() > 100)
             throw new IllegalArgumentException("promptId 不能为空且不能超过 100 字符");
         if (item.getImagePath() == null || item.getImagePath().trim().isEmpty() || item.getImagePath().length() > 2000)
-            throw new IllegalArgumentException("图片路径不能为空且不能超过 2000 字符");
+            throw new IllegalArgumentException("媒体路径不能为空且不能超过 2000 字符");
+        String mediaType = item.getMediaType() == null ? "" : item.getMediaType().trim().toUpperCase(Locale.ROOT);
+        if (!mediaType.equals("IMAGE") && !mediaType.equals("VIDEO"))
+            throw new IllegalArgumentException("mediaType 仅支持 IMAGE 或 VIDEO");
     }
     private static String platform(String value) {
         if ("windows".equalsIgnoreCase(value)) return "Windows";

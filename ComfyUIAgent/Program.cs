@@ -715,10 +715,7 @@ IResult GenerationAccepted(PreparedGeneration item) => Results.Json(new {
 
 app.MapGet("/api/gallery/file", (string path) => {
     var file = ResolveGalleryPath(path, mustExist: true);
-    var contentType = Path.GetExtension(file).ToLowerInvariant() switch {
-        ".png" => "image/png", ".jpg" or ".jpeg" => "image/jpeg", ".webp" => "image/webp", _ => "application/octet-stream"
-    };
-    return Results.File(file, contentType, enableRangeProcessing: true);
+    return Results.File(file, GalleryMediaContentType(file), enableRangeProcessing: true);
 });
 app.MapPost("/api/gallery/open-folder", (AssetPathRequest request) => {
     var file = ResolveGalleryPath(request.Path ?? "", mustExist: true);
@@ -728,8 +725,7 @@ app.MapPost("/api/gallery/open-folder", (AssetPathRequest request) => {
 
 app.MapGet("/api/assets/file", (string path) => {
     var file = ResolveAssetPath(path);
-    var contentType = Path.GetExtension(file).ToLowerInvariant() switch { ".png" => "image/png", ".jpg" or ".jpeg" => "image/jpeg", ".webp" => "image/webp", _ => "application/octet-stream" };
-    return Results.File(file, contentType, enableRangeProcessing: true);
+    return Results.File(file, GalleryMediaContentType(file), enableRangeProcessing: true);
 });
 app.MapPost("/api/assets/open-folder", (AssetPathRequest request) => {
     var file = ResolveAssetPath(request.Path ?? "");
@@ -743,7 +739,7 @@ app.MapPost("/api/assets/delete", (GalleryPathsRequest request) => {
     var deleted = 0;
     foreach (var path in paths) {
         var file = ResolveAssetPath(path, mustExist: false);
-        if (File.Exists(file) && IsGalleryImage(file)) { File.Delete(file); deleted++; }
+        if (File.Exists(file) && IsGalleryMedia(file)) { File.Delete(file); deleted++; }
     }
     return Results.Ok(new { success = true, deleted });
 }).DisableAntiforgery();
@@ -755,7 +751,7 @@ app.MapPost("/api/assets/move", (GalleryPathsRequest request) => {
     Directory.CreateDirectory(destination);
     var sources = paths.Select(path => {
         var source = Path.GetFullPath(path);
-        if (!File.Exists(source) || !IsGalleryImage(source)) throw new InvalidOperationException($"资产图片不存在：{path}");
+        if (!File.Exists(source) || !IsGalleryMedia(source)) throw new InvalidOperationException($"资产媒体不存在：{path}");
         return source;
     }).ToArray();
     var migrationPlan = PlanImageMigrations(sources, destination);
@@ -766,7 +762,7 @@ app.MapPost("/api/assets/move", (GalleryPathsRequest request) => {
         var image = ToGalleryImage(new GalleryFile { FullPath = target, Path = target, Filename = Path.GetFileName(target), CreatedAt = new DateTimeOffset(File.GetLastWriteTime(target)) });
         assets.Add(new { oldPath = source, localPath = target,
             localUrl = $"http://127.0.0.1:32145/api/assets/file?path={Uri.EscapeDataString(target)}",
-            fileName = image.Filename, fileSize = image.SizeBytes, width = image.Width, height = image.Height });
+            fileName = image.Filename, fileSize = image.SizeBytes, width = image.Width, height = image.Height, assetType = image.MediaType.ToLowerInvariant(), mimeType = image.MimeType });
     }
     return Results.Ok(new { success = true, platform = settings.PlatformName, assets });
 }).DisableAntiforgery();
@@ -826,18 +822,18 @@ app.MapPost("/api/migration/folders", async (FolderRequest request) => {
 
 app.MapPost("/api/gallery/delete", async (GalleryPathsRequest request) => {
     var paths = request.Paths.Select(NormalizeRelativePath).Where(path => path.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
-    if (paths.Length == 0) return Results.BadRequest(new { success = false, message = "请选择要删除的图片" });
+    if (paths.Length == 0) return Results.BadRequest(new { success = false, message = "请选择要删除的媒体" });
     var deleted = 0;
     foreach (var path in paths) {
         var file = ResolveGalleryPath(path, mustExist: false);
-        if (File.Exists(file) && IsGalleryImage(file)) { File.Delete(file); deleted++; }
+        if (File.Exists(file) && IsGalleryMedia(file)) { File.Delete(file); deleted++; }
     }
     return Results.Ok(new { success = true, deleted });
 }).DisableAntiforgery();
 
 app.MapPost("/api/gallery/move", async (GalleryMoveRequest request) => {
     var paths = request.Paths.Select(NormalizeRelativePath).Where(path => path.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
-    if (paths.Length == 0) return Results.BadRequest(new { success = false, message = "请选择要迁移的图片" });
+    if (paths.Length == 0) return Results.BadRequest(new { success = false, message = "请选择要迁移的媒体" });
     var root = GalleryRoot();
     var folder = (request.Folder ?? "").Trim();
     var externalDestination = folder.Length == 0;
@@ -846,7 +842,7 @@ app.MapPost("/api/gallery/move", async (GalleryMoveRequest request) => {
     var sourceFiles = new List<(string OldPath, string Source)>();
     foreach (var oldPath in paths) {
         var source = ResolveGalleryPath(oldPath, mustExist: true);
-        if (!IsGalleryImage(source)) throw new InvalidOperationException($"不是可迁移的图片：{oldPath}");
+        if (!IsGalleryMedia(source)) throw new InvalidOperationException($"不是可迁移的媒体：{oldPath}");
         sourceFiles.Add((oldPath, source));
     }
     var migrationPlan = PlanImageMigrations(sourceFiles.Select(file => file.Source), destination);
@@ -869,7 +865,7 @@ app.MapPost("/api/gallery/move", async (GalleryMoveRequest request) => {
             return new {
                 oldPath = file.OldPath,
                 localPath = file.Target, localUrl = $"http://127.0.0.1:32145/api/assets/file?path={Uri.EscapeDataString(file.Target)}", fileName = image.Filename, fileSize = image.SizeBytes,
-                width = image.Width, height = image.Height
+                width = image.Width, height = image.Height, assetType = image.MediaType.ToLowerInvariant(), mimeType = image.MimeType
             };
         }).ToArray() : Array.Empty<object>();
         return Results.Ok(new { success = true, moved = moved.Count, folder = destination, platform = settings.PlatformName, assets });
@@ -1674,7 +1670,12 @@ string GetMaidAiDirectory() {
     return Path.GetFullPath(settings.MaidAiDirectory);
 }
 string NormalizeRelativePath(string? path) => (path ?? "").Replace('\\', '/').TrimStart('/');
-bool IsGalleryImage(string path) => new[] { ".png", ".jpg", ".jpeg", ".webp" }.Contains(Path.GetExtension(path), StringComparer.OrdinalIgnoreCase);
+bool IsGalleryMedia(string path) => new[] { ".png", ".jpg", ".jpeg", ".webp", ".mp4", ".webm", ".mov", ".m4v" }.Contains(Path.GetExtension(path), StringComparer.OrdinalIgnoreCase);
+string GalleryMediaContentType(string path) => Path.GetExtension(path).ToLowerInvariant() switch {
+    ".png" => "image/png", ".jpg" or ".jpeg" => "image/jpeg", ".webp" => "image/webp",
+    ".mp4" => "video/mp4", ".webm" => "video/webm", ".mov" => "video/quicktime", ".m4v" => "video/x-m4v",
+    _ => throw new InvalidOperationException("不支持的媒体格式")
+};
 StringComparer PathComparer() => OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
 
 ImageMigrationPlan PlanImageMigrations(IEnumerable<string> sourcePaths, string destination) {
@@ -1683,7 +1684,7 @@ ImageMigrationPlan PlanImageMigrations(IEnumerable<string> sourcePaths, string d
     var sources = sourcePaths.Select(Path.GetFullPath).Distinct(comparer).ToArray();
     var sourceSet = sources.ToHashSet(comparer);
     var existingHashes = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-    foreach (var existing in Directory.EnumerateFiles(destination, "*", SearchOption.AllDirectories).Where(IsGalleryImage)) {
+    foreach (var existing in Directory.EnumerateFiles(destination, "*", SearchOption.AllDirectories).Where(IsGalleryMedia)) {
         var fullPath = Path.GetFullPath(existing);
         if (sourceSet.Contains(fullPath)) continue;
         var hash = FileSha256(fullPath);
@@ -1745,7 +1746,7 @@ string ResolveAssetPath(string path, bool mustExist = true) {
         ? Path.GetFullPath(raw)
         : Path.GetFullPath(Path.Combine(root, NormalizeRelativePath(raw).Replace('/', Path.DirectorySeparatorChar)));
     var comparison = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
-    if ((!absolute && !full.StartsWith(prefix, comparison) && !string.Equals(full, root, comparison)) || !IsGalleryImage(full) || (mustExist && !File.Exists(full)))
+    if ((!absolute && !full.StartsWith(prefix, comparison) && !string.Equals(full, root, comparison)) || !IsGalleryMedia(full) || (mustExist && !File.Exists(full)))
         throw new FileNotFoundException("迁移资产不存在", path);
     return full;
 }
@@ -1758,7 +1759,8 @@ JsonSerializerOptions GalleryJsonOptions(bool writeIndented = false) => new() {
 
 GalleryImage ToGalleryImage(GalleryFile file) {
     var (width, height) = ReadImageDimensions(file.FullPath);
-    return new GalleryImage { Path = file.Path, FullPath = file.FullPath, Filename = file.Filename, SizeBytes = new FileInfo(file.FullPath).Length, Width = width, Height = height };
+    var mimeType = GalleryMediaContentType(file.FullPath);
+    return new GalleryImage { Path = file.Path, FullPath = file.FullPath, Filename = file.Filename, SizeBytes = new FileInfo(file.FullPath).Length, Width = width, Height = height, MediaType = mimeType.StartsWith("video/", StringComparison.Ordinal) ? "VIDEO" : "IMAGE", MimeType = mimeType };
 }
 
 void OpenFileInFolder(string file) {
@@ -1969,7 +1971,9 @@ sealed class BridgeSettings {
                 MainPyPath = MainPyPath,
                 WorkingDirectory = WorkingDirectory,
                 OutputDirectory = OutputDirectory,
-                StartArguments = OperatingSystem.IsMacOS() ? new[] { "--enable-manager" } : new[] { "--windows-standalone-build", "--enable-manager" }
+                StartArguments = OperatingSystem.IsMacOS()
+                    ? new[] { "--enable-manager" }
+                    : new[] { "--windows-standalone-build", "--enable-manager", "--reserve-vram", "4" }
             };
         }
     }
@@ -2028,6 +2032,8 @@ sealed class GalleryImage {
     public long SizeBytes { get; set; }
     public int? Width { get; set; }
     public int? Height { get; set; }
+    public string MediaType { get; set; } = "IMAGE";
+    public string MimeType { get; set; } = "application/octet-stream";
 }
 sealed class GenerationLora {
     public string Name { get; set; } = "";

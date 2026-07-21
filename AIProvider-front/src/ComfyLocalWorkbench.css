@@ -118,6 +118,10 @@
 .compact-home .comfy-form,.compact-home .comfy-history{height:100%!important;min-height:0!important;max-height:100%!important}
 .compact-home .local-image-wall{flex:1 1 0!important;min-height:0!important;height:auto!important;max-height:none!important;align-self:stretch;box-sizing:border-box;padding-bottom:8px;grid-template-columns:repeat(auto-fill,minmax(132px,1fr))!important;grid-template-rows:none!important;grid-auto-rows:145px!important;gap:8px!important;align-content:start;overflow-y:auto!important;overflow-x:hidden!important}
 .compact-home .local-image-tile{min-height:0;height:100%!important;aspect-ratio:auto!important}
+
+.local-image-tile video{display:block;width:100%;height:100%;object-fit:contain;pointer-events:none}
+.video-play-badge{position:absolute;left:50%;top:50%;display:grid;place-items:center;width:34px;height:34px;border-radius:50%;transform:translate(-50%,-50%);background:color-mix(in srgb,var(--bg-sidebar) 76%,transparent);color:var(--text-primary);box-shadow:0 0 0 1px var(--border-normal)}
+.video-play-badge svg{width:17px;height:17px}
 @media(max-width:900px){.compact-home .comfy-form,.compact-home .comfy-history{height:auto!important;min-height:0!important;max-height:none!important}.compact-home .local-image-wall{height:auto!important;max-height:none!important}}
 
 /* Workflow is the root configuration: keep it first, then its live parameters, then schemes. */

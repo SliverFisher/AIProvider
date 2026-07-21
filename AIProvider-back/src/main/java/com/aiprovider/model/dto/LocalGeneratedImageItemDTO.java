@@ -9,6 +9,8 @@ public class LocalGeneratedImageItemDTO {
     private String promptId;
     private String imagePath;
     private String fileName;
+    private String mediaType;
+    private String mimeType;
     private String workflowId;
     private String workflowName;
     private String prompt;
@@ -32,6 +34,10 @@ public class LocalGeneratedImageItemDTO {
     public void setImagePath(String imagePath) { this.imagePath = imagePath; }
     public String getFileName() { return fileName; }
     public void setFileName(String fileName) { this.fileName = fileName; }
+    public String getMediaType() { return mediaType; }
+    public void setMediaType(String mediaType) { this.mediaType = mediaType; }
+    public String getMimeType() { return mimeType; }
+    public void setMimeType(String mimeType) { this.mimeType = mimeType; }
     public String getWorkflowId() { return workflowId; }
     public void setWorkflowId(String workflowId) { this.workflowId = workflowId; }
     public String getWorkflowName() { return workflowName; }

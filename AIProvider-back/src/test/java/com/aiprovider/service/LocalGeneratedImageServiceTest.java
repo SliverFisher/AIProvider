@@ -18,6 +18,7 @@ class LocalGeneratedImageServiceTest {
         LocalGeneratedImageService service = new LocalGeneratedImageService(repository);
         LocalGeneratedImageItemDTO item = new LocalGeneratedImageItemDTO();
         item.setPromptId("prompt-without-text"); item.setImagePath("aimaid/no-prompt.png");
+        item.setMediaType("IMAGE"); item.setMimeType("image/png");
         item.setPrompt("   "); item.setNegativePrompt("");
         item.setMainModel("  flux\\dev.safetensors  ");
         LocalGeneratedImageBatchDTO batch = new LocalGeneratedImageBatchDTO();
@@ -31,6 +32,22 @@ class LocalGeneratedImageServiceTest {
         assertThat(item.getNegativePrompt()).isNull();
         assertThat(item.getMainModel()).isEqualTo("flux\\dev.safetensors");
         verify(repository).upsertBatch(eq("Windows"), argThat(rows -> rows.size() == 1 && rows.get(0).get("item") == item));
+    }
+
+    @Test void persistsExplicitVideoMetadata() {
+        LocalGeneratedImageRepository repository = mock(LocalGeneratedImageRepository.class);
+        LocalGeneratedImageItemDTO item = new LocalGeneratedImageItemDTO();
+        item.setPromptId("video-prompt"); item.setImagePath("aimaid/result.mp4");
+        item.setMediaType("video"); item.setMimeType("video/mp4");
+        LocalGeneratedImageBatchDTO batch = new LocalGeneratedImageBatchDTO();
+        batch.setPlatform("Windows"); batch.setItems(Collections.singletonList(item));
+        when(repository.findByPathHashes(eq("Windows"), anyList())).thenReturn(Collections.singletonList(Map.of("id", 8L, "imagePath", "aimaid/result.mp4", "mediaType", "VIDEO", "mimeType", "video/mp4")));
+
+        new LocalGeneratedImageService(repository).saveBatch(batch);
+
+        assertThat(item.getMediaType()).isEqualTo("VIDEO");
+        assertThat(item.getMimeType()).isEqualTo("video/mp4");
+        verify(repository).upsertBatch(eq("Windows"), argThat(rows -> ((LocalGeneratedImageItemDTO) rows.get(0).get("item")).getMediaType().equals("VIDEO")));
     }
 
     @Test void pagesTheBackendLocalImageQueueAndClampsADeletedLastPage() {

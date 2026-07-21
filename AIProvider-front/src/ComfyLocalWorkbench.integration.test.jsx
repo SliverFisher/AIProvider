@@ -60,6 +60,10 @@ const incrementalCompleted = {
   ...completed,
   outputs: { "7": { images: [{ filename: "incremental.png", subfolder: "aimaid", type: "output" }] } },
 };
+const completedVideo = {
+  ...completed,
+  outputs: { "7": { images: [{ filename: "done.mp4", subfolder: "aimaid", type: "output" }], animated: [true] } },
+};
 
 function json(data, status = 200) {
   return new Response(JSON.stringify(data), { status, headers: { "Content-Type": "application/json" } });
@@ -110,6 +114,7 @@ describe("Comfy image generation flow", () => {
   let localGalleryMainModel;
   let staleLocalGallery;
   let staleCleanupIds;
+  let generatedVideo;
 
   beforeEach(() => {
     submitted = false;
@@ -128,6 +133,7 @@ describe("Comfy image generation flow", () => {
     cancelledTask = null;
     cancelAllRequests = 0;
     multiImageGallery = false;
+    generatedVideo = false;
     submittedWorkflow = null;
     generateRequests = 0;
     submittedBatchSizes = [];
@@ -321,8 +327,8 @@ describe("Comfy image generation flow", () => {
         return json(externalGalleryReady ? { "external-prompt": completed } : {});
       }
       if (url.includes("/comfy/history/external-prompt")) return json({ "external-prompt": completed });
-      if (url.includes(`/comfy/history/${PROMPT_ID}`)) return json({ [PROMPT_ID]: completed });
-      if (url.includes("/comfy/view?")) return new Response(new Blob(["image"], { type: "image/png" }));
+      if (url.includes(`/comfy/history/${PROMPT_ID}`)) return json({ [PROMPT_ID]: generatedVideo ? completedVideo : completed });
+      if (url.includes("/comfy/view?")) return new Response(new Blob([generatedVideo ? "video" : "image"], { type: generatedVideo ? "video/mp4" : "image/png" }));
       if (url.endsWith("/api/generate") && options.method === "POST") {
         submitted = true;
         generateRequests += 1;
@@ -393,6 +399,24 @@ describe("Comfy image generation flow", () => {
     expect(image.getAttribute("src")).toBe("blob:done");
     expect(screen.getByText("1 张")).toBeTruthy();
     await waitFor(() => expect(localImageBatchBodies.map((body) => ({ promptId: body?.items?.[0]?.promptId, mainModel: body?.items?.[0]?.mainModel }))).toEqual([{ promptId: PROMPT_ID, mainModel: "flux\\dev.safetensors" }]));
+  }, 15000);
+
+  it("renders generated MP4 with a video cover/player and records explicit backend media metadata", async () => {
+    generatedVideo = true;
+    render(<ComfyLocalWorkbench />);
+    const generate = await screen.findByRole("button", { name: "开始生成" });
+    await waitFor(() => expect(generate.disabled).toBe(false));
+    fireEvent.click(generate);
+
+    const cover = await screen.findByLabelText("历史生成视频", {}, { timeout: 10000 });
+    await waitFor(() => expect(localImageBatchBody?.items?.[0]).toMatchObject({
+      imagePath: "aimaid/done.mp4", fileName: "done.mp4", mediaType: "VIDEO", mimeType: "video/mp4",
+    }));
+    fireEvent.click(cover.closest("button"));
+    const player = document.querySelector("video.media-viewer-video");
+    expect(player).toBeTruthy();
+    expect(player.getAttribute("controls")).not.toBeNull();
+    expect(player.getAttribute("src")).toBe("blob:done");
   }, 15000);
 
   it("shows only the main-model filename in image details", async () => {
