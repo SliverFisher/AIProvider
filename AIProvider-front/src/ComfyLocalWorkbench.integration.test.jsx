@@ -172,7 +172,7 @@ describe("Comfy image generation flow", () => {
       if (url === "/api/prompt-options/config") return json({ code: 200, data: { generalNegativePrompt: "" } });
       if (url === "/api/prompt-options/analyze") return json({ code: 200, data: [] });
       if (url.startsWith("/api/prompt-options?")) return json({ code: 200, data: { items: [], total: 0, pages: 0, page: 1, pageSize: 100 } });
-      if (url.includes("/api/comfy-presets")) return json({ code: 200, data: [{ id: 2, name: "扶她0", isDefault: presetIsDefault, selectedOptions: { characterCount: [], characterTypes: [], relationships: [], actions: [], clothing: [], expression: [], pose: [], cameraAngle: [], shotType: [], scene: [], composition: [], quality: [] }, positiveExtra: "", negativeExtra: "", positivePrompt: presetPositivePrompt, negativePrompt: "preset negative", remark: "" }] });
+      if (url.includes("/api/comfy-presets")) return json({ code: 200, data: [{ id: 2, name: "扶她0", promptMode: "tags", isDefault: presetIsDefault, selectedOptions: { characterCount: [], characterTypes: [], relationships: [], actions: [], clothing: [], expression: [], pose: [], cameraAngle: [], shotType: [], scene: [], composition: [], quality: [] }, positiveExtra: "", negativeExtra: "", positivePrompt: presetPositivePrompt, negativePrompt: "preset negative", remark: "" }] });
       if (url.startsWith("/api/assets?")) {
         assetRequests += 1;
         return json({ code: 200, data: { page: 1, pages: 1, total: 1, items: [{ id: 12, platform: "Windows", localPath: "C:\\assets\\saved.png", localUrl: "http://127.0.0.1:32145/api/assets/file?path=saved.png", fileName: "saved.png", fileSize: 8 }] } });

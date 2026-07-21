@@ -889,15 +889,18 @@ export default function ComfyLocalWorkbench({ mode = "workbench", active = true 
     setPresetSaving(true);
     setError("");
     try {
-      const matchedOptions = await analyzePromptOptions(form.positivePrompt, form.negativePrompt);
-      const mappedSelections = matchSelectedOptionsFromPrompt(form.positivePrompt, matchedOptions, PROMPT_CATEGORIES);
-      const mappedPositiveExtra = extractPositiveExtra(form.positivePrompt, mappedSelections, matchedOptions);
-      const mappedNegativeExtra = extractNegativeExtra(form.negativePrompt, mappedSelections, matchedOptions, generalNegativePrompt);
+      const promptMode = mode === "overwrite" ? selected.promptMode : "tags";
+      if (promptMode !== "tags" && promptMode !== "prose") throw new Error("Prompt 方案类型无效，请重新加载方案");
+      const matchedOptions = promptMode === "tags" ? await analyzePromptOptions(form.positivePrompt, form.negativePrompt) : [];
+      const mappedSelections = promptMode === "tags" ? matchSelectedOptionsFromPrompt(form.positivePrompt, matchedOptions, PROMPT_CATEGORIES) : {};
+      const mappedPositiveExtra = promptMode === "tags" ? extractPositiveExtra(form.positivePrompt, mappedSelections, matchedOptions) : "";
+      const mappedNegativeExtra = promptMode === "tags" ? extractNegativeExtra(form.negativePrompt, mappedSelections, matchedOptions, generalNegativePrompt) : "";
       const response = await fetch(mode === "new" ? "/api/comfy-presets" : `/api/comfy-presets/${selected.id}`, {
         method: mode === "new" ? "POST" : "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name: title,
+          promptMode,
           selectedOptions: mappedSelections,
           positiveExtra: mappedPositiveExtra,
           negativeExtra: mappedNegativeExtra,

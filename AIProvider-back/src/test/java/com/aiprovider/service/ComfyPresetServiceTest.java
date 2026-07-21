@@ -34,6 +34,7 @@ class ComfyPresetServiceTest {
 
     private ComfyPresetDTO valid() {
         ComfyPresetDTO dto = new ComfyPresetDTO(); dto.setName(" Portrait ");
+        dto.setPromptMode("tags");
         Map<String, List<String>> selected = new LinkedHashMap<>();
         for (String key : CATEGORIES.keySet()) selected.put(key, new ArrayList<>());
         selected.get("Character").add("Character-option");
@@ -46,6 +47,7 @@ class ComfyPresetServiceTest {
         when(presets.insert(any())).thenAnswer(invocation -> { ComfyPresetMapper.PresetRecord value = invocation.getArgument(0); value.setId(9L); return 9L; });
         assertThat(service.create(valid())).isEqualTo(9L);
         verify(presets).insert(argThat(value -> value.getName().equals("Portrait") && value.getSelectedOptionsJson().contains("Character-option") &&
+                value.getPromptMode().equals("tags") &&
                 value.getPositiveExtra().equals("extra") && value.getNegativeExtra().equals("negative extra") && value.getPositivePrompt().equals("final positive") &&
                 value.getNegativePrompt().equals("final negative") && value.getRemark().equals("note") && !value.isDefault()));
         ComfyPresetDTO defaultDto = valid(); defaultDto.setIsDefault(true); defaultDto.setRemark("  "); service.create(defaultDto);
@@ -64,6 +66,7 @@ class ComfyPresetServiceTest {
         List<ComfyPresetVO> result = service.list();
         assertThat(result).extracting(ComfyPresetVO::getId).containsExactly(7L, 8L, 9L, 10L, 11L);
         assertThat(result).extracting(ComfyPresetVO::getIsDefault).containsExactly(true, true, true, false, false);
+        assertThat(result).extracting(ComfyPresetVO::getPromptMode).containsOnly("tags");
         assertThat(result.get(0).getPositiveExtra()).isEmpty(); assertThat(result.get(0).getNegativeExtra()).isEqualTo("n");
         assertThat(result.get(1).getName()).isNull(); assertThat(result.get(0).getSelectedOptions()).containsKey("Quality");
         first.put("selectedOptionsJson", "bad"); when(presets.findAll()).thenReturn(Collections.singletonList(first));
@@ -71,7 +74,7 @@ class ComfyPresetServiceTest {
     }
 
     private Map<String, Object> row(Object id, Object isDefault) {
-        Map<String, Object> row = new HashMap<>(); row.put("id", id); row.put("name", "A"); row.put("selectedOptionsJson", selectionsJson());
+        Map<String, Object> row = new HashMap<>(); row.put("id", id); row.put("name", "A"); row.put("promptMode", "tags"); row.put("selectedOptionsJson", selectionsJson());
         row.put("positiveExtra", "p"); row.put("negativeExtra", null); row.put("positivePrompt", "positive"); row.put("negativePrompt", null);
         row.put("remark", "remark"); row.put("isDefault", isDefault); return row;
     }
@@ -116,6 +119,8 @@ class ComfyPresetServiceTest {
         dto = valid(); dto.setName(" "); assertInvalid(dto, "名称长度");
         dto = valid(); dto.setName(repeat(101)); assertInvalid(dto, "名称长度");
         dto = valid(); dto.setRemark(repeat(1001)); assertInvalid(dto, "备注");
+        dto = valid(); dto.setPromptMode(null); assertInvalid(dto, "Prompt 类型");
+        dto = valid(); dto.setPromptMode("legacy"); assertInvalid(dto, "Prompt 类型");
         dto = valid(); dto.setSelectedOptions(null); assertInvalid(dto, "当前 Prompt 词条分类");
         dto = valid(); dto.getSelectedOptions().remove("Quality"); assertInvalid(dto, "当前 Prompt 词条分类");
         dto = valid(); dto.getSelectedOptions().put("legacy", new ArrayList<>()); assertInvalid(dto, "当前 Prompt 词条分类");
@@ -130,6 +135,21 @@ class ComfyPresetServiceTest {
         assertPromptInvalid("negativeExtra", null, "反向手动补充"); assertPromptInvalid("negativeExtra", repeat(8001), "反向手动补充");
         assertPromptInvalid("positivePrompt", null, "最终正向"); assertPromptInvalid("positivePrompt", repeat(16001), "最终正向");
         assertPromptInvalid("negativePrompt", null, "最终反向"); assertPromptInvalid("negativePrompt", repeat(16001), "最终反向");
+    }
+
+    @Test void storesProseSchemesWithoutDependingOnTheTagCatalog() {
+        when(catalog.findEnabledOptions()).thenReturn(Collections.emptyList());
+        when(presets.insert(any())).thenAnswer(invocation -> { ComfyPresetMapper.PresetRecord value = invocation.getArgument(0); value.setId(12L); return 12L; });
+        ComfyPresetDTO dto = valid();
+        dto.setPromptMode("prose"); dto.setSelectedOptions(Collections.emptyMap());
+        dto.setPositiveExtra(""); dto.setNegativeExtra("");
+        dto.setPositivePrompt("A woman walks through a rainy city at night."); dto.setNegativePrompt("");
+        assertThat(service.create(dto)).isEqualTo(12L);
+        verify(presets).insert(argThat(value -> value.getPromptMode().equals("prose") && value.getSelectedOptionsJson().equals("{}") && value.getPositivePrompt().startsWith("A woman")));
+
+        dto.setSelectedOptions(Collections.singletonMap("Character", Collections.emptyList())); assertInvalid(dto, "不能包含结构化词条");
+        dto.setSelectedOptions(Collections.emptyMap()); dto.setPositiveExtra("tag"); assertInvalid(dto, "不能包含标签补充字段");
+        dto.setPositiveExtra(""); dto.setPositivePrompt(" "); assertInvalid(dto, "长文正向描述不能为空");
     }
 
     @Test void reportsJsonSerializationFailureWithoutFallback() throws Exception {

@@ -26,6 +26,12 @@ file-transfer:
 favorites:
   storage-directory: ${FAVORITES_STORAGE_DIRECTORY:/opt/aiprovider/favorites}
 
+prompt-translation:
+  libretranslate-url: ${LIBRETRANSLATE_URL:http://127.0.0.1:5000/translate}
+  libretranslate-api-key: ${LIBRETRANSLATE_API_KEY:}
+  connect-timeout-ms: ${LIBRETRANSLATE_CONNECT_TIMEOUT_MS:3000}
+  read-timeout-ms: ${LIBRETRANSLATE_READ_TIMEOUT_MS:60000}
+
 mybatis:
   mapper-locations: classpath:mapper/*.xml
   type-aliases-package: com.aiprovider.model

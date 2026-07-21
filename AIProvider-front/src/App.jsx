@@ -122,7 +122,7 @@ const PAGE_DESCRIPTIONS = {
   manualEditor: "本机画布、抠图与 AI 修补",
   videoEditor: "素材、画布与时间线编辑",
   market: "实时行情、K 线与订单簿",
-  prompts: "管理可复用的结构化提示词方案",
+  prompts: "管理可复用的标签式与长文式提示词方案",
   promptOptions: "维护 Prompt 词条与分类规则",
   maid: "查看角色状态与模型活动",
   monitor: "服务健康、资源、网络与费用",

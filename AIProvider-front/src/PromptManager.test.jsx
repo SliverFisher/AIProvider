@@ -34,6 +34,7 @@ describe("PromptManager", () => {
         const items = catalog.options.filter((option) => (!category || option.category === category) && (!keyword || [option.id, option.name, option.positivePrompt].join(" ").toLowerCase().includes(keyword)));
         return response({ items, total: items.length, pages: items.length ? 1 : 0 });
       }
+      if (url === "/api/prompt-translations/prose") return response({ positivePrompt: "一名女子走过雨夜城市。", negativePrompt: "不要出现文字。" });
       if (options.method === "POST") { saved = JSON.parse(options.body); return response({ id: 9 }); }
       return response([]);
     }));
@@ -55,6 +56,7 @@ describe("PromptManager", () => {
     await waitFor(() => expect(saved).not.toBeNull());
     expect(saved).toMatchObject({
       name: "结构化方案", selectedOptions: { Character: ["solo", "girl"] },
+      promptMode: "tags",
       positiveExtra: "temporary final edit", negativeExtra: "", positivePrompt: "temporary final edit",
       negativePrompt: "low quality, bad hands, crowd, male", remark: "", isDefault: false,
     });
@@ -77,7 +79,7 @@ describe("PromptManager", () => {
 
   it("restores every saved selection and final Prompt from the edit query", async () => {
     const selectedOptions = { ...emptySelectedOptions(), Quality: ["masterpiece"] };
-    const preset = { id: 7, name: "已保存", selectedOptions, positiveExtra: "extra", negativeExtra: "", positivePrompt: "saved final", negativePrompt: "saved negative", remark: "memo", isDefault: true };
+    const preset = { id: 7, name: "已保存", promptMode: "tags", selectedOptions, positiveExtra: "extra", negativeExtra: "", positivePrompt: "saved final", negativePrompt: "saved negative", remark: "memo", isDefault: true };
     window.history.replaceState({}, "", "/prompts?edit=7");
     fetch.mockImplementation(async (input, options = {}) => {
       const url = String(input);
@@ -101,6 +103,22 @@ describe("PromptManager", () => {
     expect(fetch.mock.calls.some(([url]) => String(url).includes("category="))).toBe(false);
     fireEvent.focus(screen.getByLabelText("搜索人物"));
     await waitFor(() => expect(fetch.mock.calls.some(([url]) => String(url).includes("category=Character"))).toBe(true));
+  });
+
+  it("separates prose schemes, saves paragraphs, and previews a full Chinese translation", async () => {
+    render(<PromptManager />);
+    await screen.findByLabelText("方案名称");
+    fireEvent.change(screen.getByLabelText("方案名称"), { target: { value: "Flux 长文方案" } });
+    fireEvent.click(screen.getByRole("radio", { name: /长文式/ }));
+    expect(screen.queryByLabelText("全局搜索 Prompt 词条")).toBeNull();
+    fireEvent.change(screen.getByLabelText("长文正向描述"), { target: { value: "A woman walks through a rainy city at night.\nNeon light reflects on the street." } });
+    fireEvent.change(screen.getByLabelText("长文反向约束"), { target: { value: "Do not include text." } });
+    fireEvent.click(screen.getByRole("button", { name: "翻译为中文" }));
+    expect(await screen.findByDisplayValue("一名女子走过雨夜城市。")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+    await waitFor(() => expect(saved).not.toBeNull());
+    expect(saved).toMatchObject({ name: "Flux 长文方案", promptMode: "prose", selectedOptions: {}, positiveExtra: "", negativeExtra: "", negativePrompt: "Do not include text." });
+    expect(saved.positivePrompt).toContain("\nNeon light");
   });
 
   it("cancels in-flight Prompt requests when switching workspaces", async () => {

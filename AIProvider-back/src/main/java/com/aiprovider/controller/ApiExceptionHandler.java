@@ -8,6 +8,7 @@ import com.aiprovider.service.RemoteCodexException;
 import com.aiprovider.service.ContentAiException;
 import com.aiprovider.service.ContentSourceException;
 import com.aiprovider.service.XiaohongshuAutomationException;
+import com.aiprovider.service.PromptTranslationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -75,6 +76,10 @@ public class ApiExceptionHandler {
     @ExceptionHandler(XiaohongshuAutomationException.class)
     @ResponseStatus(HttpStatus.BAD_GATEWAY)
     public Result<Void> xiaohongshuAutomation(XiaohongshuAutomationException exception) { return Result.error(502, exception.getMessage()); }
+
+    @ExceptionHandler(PromptTranslationException.class)
+    @ResponseStatus(HttpStatus.BAD_GATEWAY)
+    public Result<Void> promptTranslation(PromptTranslationException exception) { return Result.error(502, exception.getMessage()); }
 
     @ExceptionHandler(IllegalStateException.class)
     public ResponseEntity<Result<Void>> illegalState(IllegalStateException exception) {

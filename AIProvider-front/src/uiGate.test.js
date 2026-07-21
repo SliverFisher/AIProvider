@@ -174,6 +174,14 @@ describe("UI release gate", () => {
     expect(prompt).not.toContain('role="button"');
     expect(prompt).not.toContain('<span className={`prompt-default-star');
     expect(prompt).toContain('<button type="button" className={`prompt-default-star');
+    expect(prompt).toContain('name="promptMode"');
+    expect(prompt).toContain('aria-label="长文正向描述"');
+    expect(prompt).toContain('/api/prompt-translations/prose');
+    expect(prompt).not.toContain('role="radio"');
+    expect(read("App.jsx")).toContain('prompts: "管理可复用的标签式与长文式提示词方案"');
+    const workbench = read("ComfyLocalWorkbench.jsx");
+    expect(workbench).toContain('const promptMode = mode === "overwrite" ? selected.promptMode : "tags"');
+    expect(workbench).toContain('promptMode !== "tags" && promptMode !== "prose"');
   });
 
   it("keeps the desktop shell labeled, grouped, and workshop-safe", () => {

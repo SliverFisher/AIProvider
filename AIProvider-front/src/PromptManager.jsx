@@ -1,11 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Copy, FloppyDisk, Plus, Star, Trash, Warning, X } from "@phosphor-icons/react";
+import { Copy, FloppyDisk, Plus, Star, Translate, Trash, Warning, X } from "@phosphor-icons/react";
 import { PROMPT_CATEGORIES, composePrompts, emptySelectedOptions, extractNegativeExtra, extractPositiveExtra, normalizePrompt, relatedNegativePromptsForPositive, normalizeSelectedOptions } from "./promptComposer";
 import UiSearchField from "./UiSearchField";
 import { readJsonResponse } from "./apiResponse";
 import "./PromptManager.css";
 
-const emptyDraft = (definitions) => ({ id: null, name: "", selectedOptions: emptySelectedOptions(definitions), positiveExtra: "", negativeExtra: "", positivePrompt: "", negativePrompt: "", remark: "", isDefault: false });
+const PROMPT_MODES = {
+  tags: { label: "标签式", description: "按分类选择短标签，自动用逗号组合，适合 SDXL、Pony 等标签模型。" },
+  prose: { label: "长文式", description: "用完整句子和段落描述画面，适合 Flux、SD3 等自然语言模型。" },
+};
+const emptyDraft = (definitions) => ({ id: null, name: "", promptMode: "tags", selectedOptions: emptySelectedOptions(definitions), positiveExtra: "", negativeExtra: "", positivePrompt: "", negativePrompt: "", remark: "", isDefault: false });
 
 async function request(path, options) {
   const response = await fetch(path, options);
@@ -62,17 +66,20 @@ export default function PromptManager({ onEditOptions }) {
   const [items, setItems] = useState([]);
   const [catalog, setCatalog] = useState({ options: [], generalNegativePrompt: "" });
   const [query, setQuery] = useState("");
+  const [modeFilter, setModeFilter] = useState("all");
   const [draft, setDraft] = useState(emptyDraft);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [globalOptionQuery, setGlobalOptionQuery] = useState("");
   const [globalOptionResults, setGlobalOptionResults] = useState([]);
   const [categoryLoading, setCategoryLoading] = useState({});
+  const [translation, setTranslation] = useState(null);
+  const [translating, setTranslating] = useState(false);
   const requestControllers = useRef(new Set());
   const loadedCategories = useRef(new Set());
   const categoryLoads = useRef(new Map());
   const latestGlobalSearch = useRef(0);
-  const filtered = useMemo(() => items.filter((item) => item.name.toLowerCase().includes(query.trim().toLowerCase())), [items, query]);
+  const filtered = useMemo(() => items.filter((item) => (modeFilter === "all" || item.promptMode === modeFilter) && item.name.toLowerCase().includes(query.trim().toLowerCase())), [items, modeFilter, query]);
   const optionsByCategory = useMemo(() => Object.fromEntries(DEFINITIONS.map(({ category }) => [category, catalog.options.filter((option) => option.category === category && option.type !== "negative")])), [catalog.options]);
 
   const call = useCallback(async (path, options = {}) => {
@@ -93,6 +100,7 @@ export default function PromptManager({ onEditOptions }) {
   }, [call, mergeOptions]);
   const select = useCallback((item) => {
     setDraft(normalizePreset(item, DEFINITIONS));
+    setTranslation(null);
     resolveSelections(item).catch((exception) => { if (exception.name !== "AbortError") setError(exception.message); });
   }, [resolveSelections]);
   const load = useCallback(async (preferredId) => {
@@ -144,6 +152,7 @@ export default function PromptManager({ onEditOptions }) {
   }, [call, globalOptionQuery, mergeOptions]);
 
   const setRoot = (key, value) => setDraft((current) => ({ ...current, [key]: value }));
+  const setPromptMode = (promptMode) => { setDraft((current) => ({ ...current, promptMode })); setTranslation(null); setError(""); };
   const setFinalPositivePrompt = (value) => setDraft((current) => ({ ...current, positivePrompt: value, positiveExtra: extractPositiveExtra(value, current.selectedOptions, catalog.options), negativePrompt: normalizePrompt(current.negativePrompt, ...relatedNegativePromptsForPositive(value, catalog.options)) }));
   const setFinalNegativePrompt = (value) => setDraft((current) => ({ ...current, negativePrompt: value, negativeExtra: extractNegativeExtra(value, current.selectedOptions, catalog.options, catalog.generalNegativePrompt) }));
   const regenerate = (current, patch) => {
@@ -153,11 +162,19 @@ export default function PromptManager({ onEditOptions }) {
   const setSelection = (key, value) => setDraft((current) => regenerate(current, { selectedOptions: { ...current.selectedOptions, [key]: value } }));
   const setExtra = (key, value) => setDraft((current) => regenerate(current, { [key]: value }));
   const payload = () => ({
-    name: draft.name.trim(), selectedOptions: draft.selectedOptions,
-    positiveExtra: draft.positiveExtra, negativeExtra: draft.negativeExtra,
+    name: draft.name.trim(), promptMode: draft.promptMode,
+    selectedOptions: draft.promptMode === "tags" ? draft.selectedOptions : {},
+    positiveExtra: draft.promptMode === "tags" ? draft.positiveExtra : "", negativeExtra: draft.promptMode === "tags" ? draft.negativeExtra : "",
     positivePrompt: draft.positivePrompt, negativePrompt: draft.negativePrompt,
     remark: "", isDefault: draft.isDefault,
   });
+  const translateProse = async () => {
+    if (!draft.positivePrompt.trim()) return setError("请先填写长文正向描述");
+    setTranslating(true); setError(""); setTranslation(null);
+    try {
+      setTranslation(await call("/api/prompt-translations/prose", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ positivePrompt: draft.positivePrompt, negativePrompt: draft.negativePrompt }) }));
+    } catch (exception) { setError(exception.message); } finally { setTranslating(false); }
+  };
   const save = async () => {
     if (!draft.name.trim()) return setError("请填写方案名称");
     setBusy(true); setError("");
@@ -182,7 +199,7 @@ export default function PromptManager({ onEditOptions }) {
     try { await call(`/api/comfy-presets/${item.id}/default`, { method: item.isDefault ? "DELETE" : "POST" }); await load(item.id); }
     catch (exception) { setError(exception.message); } finally { setBusy(false); }
   };
-  const createNew = () => setDraft(emptyDraft(DEFINITIONS));
+  const createNew = () => { setDraft(emptyDraft(DEFINITIONS)); setTranslation(null); };
   const duplicate = () => setDraft({ ...draft, id: null, name: `${draft.name || "未命名方案"} - 副本`, isDefault: false, selectedOptions: normalizeSelectedOptions(draft.selectedOptions, DEFINITIONS) });
 
   return <div className="prompt-manager">
@@ -190,11 +207,12 @@ export default function PromptManager({ onEditOptions }) {
     <aside className="prompt-scheme-list">
       <header><div><span>PROMPT LIBRARY</span><h2>Prompt 方案</h2></div><div className="prompt-list-actions"><button onClick={onEditOptions}>编辑词条</button><button onClick={createNew} title="新建方案"><Plus /></button></div></header>
       <UiSearchField className="prompt-list-search" aria-label="搜索 Prompt 方案" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索方案名称…" />
+      <div className="prompt-mode-filter" aria-label="按 Prompt 类型筛选">{[["all", "全部"], ["tags", "标签式"], ["prose", "长文式"]].map(([value, label]) => <button type="button" key={value} className={modeFilter === value ? "active" : ""} aria-pressed={modeFilter === value} onClick={() => setModeFilter(value)}>{label}</button>)}</div>
       <div className="prompt-list-scroll">
         {filtered.map((item) => <article key={item.id} className={`prompt-scheme-row ${String(item.id) === String(draft.id) ? "active" : ""}`}>
           <button type="button" className="prompt-scheme-select" aria-current={String(item.id) === String(draft.id) ? "true" : undefined} onClick={() => select(item)}>
-            <span>{item.name}</span>
-            <small>{item.selectedOptions ? `${Object.values(item.selectedOptions).flat().length} 个结构化词条` : "未选择词条"}</small>
+            <span>{item.name}<em className={`prompt-mode-badge is-${item.promptMode}`}>{PROMPT_MODES[item.promptMode]?.label}</em></span>
+            <small>{item.promptMode === "prose" ? `${item.positivePrompt?.length || 0} 字符长文` : `${Object.values(item.selectedOptions || {}).flat().length} 个结构化词条`}</small>
           </button>
           <button type="button" className={`prompt-default-star ${item.isDefault ? "is-default" : ""}`} aria-label={item.isDefault ? `取消默认方案 ${item.name}` : `设为默认方案 ${item.name}`} title={item.isDefault ? "取消默认方案" : "设为默认方案"} onClick={() => toggleDefault(item)}><Star weight={item.isDefault ? "fill" : "regular"} /></button>
         </article>)}
@@ -210,7 +228,9 @@ export default function PromptManager({ onEditOptions }) {
           <h3>基础信息</h3>
           <label className="prompt-scheme-name-field">方案名称<input aria-label="方案名称" value={draft.name} maxLength="100" onChange={(event) => setRoot("name", event.target.value)} /></label>
           <label className="check"><input aria-label="是否默认方案" type="checkbox" checked={draft.isDefault} onChange={(event) => setRoot("isDefault", event.target.checked)} /><span>设为默认方案</span></label>
+          <fieldset className="prompt-mode-picker"><legend>Prompt 类型</legend>{Object.entries(PROMPT_MODES).map(([value, mode]) => <label key={value} className={draft.promptMode === value ? "active" : ""}><input type="radio" name="promptMode" value={value} checked={draft.promptMode === value} onChange={() => setPromptMode(value)} /><span><b>{mode.label}</b><small>{mode.description}</small></span></label>)}</fieldset>
         </section>
+        {draft.promptMode === "tags" ? <>
         <section className="prompt-composer">
           <header><div><h3>Prompt 组合器</h3><small>词条来自数据库配置；修改选择后自动重建最终 Prompt</small></div><span>{Object.values(draft.selectedOptions).flat().length} 项</span></header>
           <UiSearchField className="prompt-option-search prompt-global-search" aria-label="全局搜索 Prompt 词条" value={globalOptionQuery} onChange={(event) => setGlobalOptionQuery(event.target.value)} placeholder="搜索中文、英文或词条 ID"><div className="prompt-global-search-results">{globalOptionQuery.trim() && globalOptionResults.map((option) => { const definition = DEFINITIONS.find((item) => item.category === option.category); const selected = draft.selectedOptions?.[option.category]?.includes(option.id); return <button type="button" key={option.id} className={selected ? "is-selected" : ""} onClick={() => { const current = draft.selectedOptions?.[option.category] || []; const next = definition?.multiple ? (current.includes(option.id) ? current : [...current, option.id]) : [option.id]; setSelection(option.category, next); setGlobalOptionQuery(""); window.setTimeout(() => document.querySelector(`[data-prompt-category="${CSS.escape(option.category)}"]`)?.scrollIntoView({ behavior: "smooth", block: "center" }), 0); }}><span><strong>{option.name}</strong><small>{definition?.label || option.category} · {option.positivePrompt}</small></span>{selected && <span>已选</span>}</button>})}{globalOptionQuery.trim() && !globalOptionResults.length && <p>没有匹配词条</p>}</div></UiSearchField>
@@ -225,6 +245,13 @@ export default function PromptManager({ onEditOptions }) {
           <label>最终正向 Prompt <small>可直接编辑；匹配到词条关联反向词时自动补充</small><textarea aria-label="最终正向 Prompt" rows="8" value={draft.positivePrompt} onChange={(event) => setFinalPositivePrompt(event.target.value)} /></label>
           <label>最终反向 Prompt <small>可直接编辑；新增内容自动同步到反向补充</small><textarea aria-label="最终反向 Prompt" rows="8" value={draft.negativePrompt} onChange={(event) => setFinalNegativePrompt(event.target.value)} /></label>
         </section>
+        </> : <section className="prompt-prose-editor">
+          <header><div><h3>长文 Prompt</h3><small>保留完整句子、段落和换行，不经过标签拆分或自动逗号拼接。</small></div><button type="button" onClick={translateProse} disabled={translating || !draft.positivePrompt.trim()}><Translate />{translating ? "翻译中…" : "翻译为中文"}</button></header>
+          <div className="prompt-prose-guide"><b>建议结构</b><span>主体与动作</span><span>环境与时间</span><span>镜头与构图</span><span>光线、材质与风格</span></div>
+          <label>长文正向描述 <small>{draft.positivePrompt.length} / 16000</small><textarea aria-label="长文正向描述" rows="14" maxLength="16000" value={draft.positivePrompt} onChange={(event) => { setRoot("positivePrompt", event.target.value); setTranslation(null); }} placeholder="Describe the complete scene in natural language…" /></label>
+          <label>长文反向约束 <small>可选 · {draft.negativePrompt.length} / 16000</small><textarea aria-label="长文反向约束" rows="7" maxLength="16000" value={draft.negativePrompt} onChange={(event) => { setRoot("negativePrompt", event.target.value); setTranslation(null); }} placeholder="Describe what should not appear in the image…" /></label>
+          {translation && <section className="prompt-prose-translation" aria-label="中文翻译预览"><header><h3>中文翻译预览</h3><small>仅供查看，不会覆盖或提交为生成 Prompt</small></header><label>正向描述译文<textarea aria-label="长文正向描述译文" rows="12" readOnly value={translation.positivePrompt || ""} /></label>{translation.negativePrompt && <label>反向约束译文<textarea aria-label="长文反向约束译文" rows="6" readOnly value={translation.negativePrompt} /></label>}</section>}
+        </section>}
       </div>
     </section>
   </div>;

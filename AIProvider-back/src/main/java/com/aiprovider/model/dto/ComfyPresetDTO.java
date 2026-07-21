@@ -5,6 +5,7 @@ import java.util.Map;
 
 public class ComfyPresetDTO {
     private String name;
+    private String promptMode;
     private Map<String, List<String>> selectedOptions;
     private String positiveExtra;
     private String negativeExtra;
@@ -15,6 +16,8 @@ public class ComfyPresetDTO {
 
     public String getName() { return name; }
     public void setName(String name) { this.name = name; }
+    public String getPromptMode() { return promptMode; }
+    public void setPromptMode(String promptMode) { this.promptMode = promptMode; }
     public Map<String, List<String>> getSelectedOptions() { return selectedOptions; }
     public void setSelectedOptions(Map<String, List<String>> selectedOptions) { this.selectedOptions = selectedOptions; }
     public String getPositiveExtra() { return positiveExtra; }

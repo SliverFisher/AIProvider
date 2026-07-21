@@ -10,10 +10,15 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import java.util.*;
 
 @Service
 public class ComfyPresetService {
+    private static final Logger log = LoggerFactory.getLogger(ComfyPresetService.class);
+    private static final String MODE_TAGS = "tags";
+    private static final String MODE_PROSE = "prose";
     private final ComfyPresetRepository presets;
     private final PromptCatalogRepository catalog;
     private final ObjectMapper json;
@@ -25,7 +30,7 @@ public class ComfyPresetService {
     public List<ComfyPresetVO> list() {
         List<ComfyPresetVO> result = new ArrayList<>();
         for (Map<String, Object> row : presets.findAll()) {
-            result.add(new ComfyPresetVO(number(row.get("id")), text(row.get("name")), parseSelections(text(row.get("selectedOptionsJson"))),
+            result.add(new ComfyPresetVO(number(row.get("id")), text(row.get("name")), requiredMode(row.get("promptMode")), parseSelections(text(row.get("selectedOptionsJson"))),
                     textOrEmpty(row.get("positiveExtra")), textOrEmpty(row.get("negativeExtra")), textOrEmpty(row.get("positivePrompt")),
                     textOrEmpty(row.get("negativePrompt")), text(row.get("remark")), truth(row.get("isDefault"))));
         }
@@ -36,7 +41,10 @@ public class ComfyPresetService {
     public long create(ComfyPresetDTO dto) {
         validate(dto);
         if (Boolean.TRUE.equals(dto.getIsDefault())) presets.clearDefault();
-        return presets.insert(record(dto));
+        ComfyPresetMapper.PresetRecord record = record(dto);
+        long id = presets.insert(record);
+        log.info("prompt_scheme_created operation=create schemeId={} promptMode={} requestedCount=1 affectedRows=1", id, record.getPromptMode());
+        return id;
     }
 
     @Transactional
@@ -44,7 +52,11 @@ public class ComfyPresetService {
         validate(dto);
         if (Boolean.TRUE.equals(dto.getIsDefault())) presets.clearDefault();
         ComfyPresetMapper.PresetRecord record = record(dto); record.setId(id);
-        if (!presets.update(record)) throw new IllegalArgumentException("Prompt 方案不存在");
+        if (!presets.update(record)) {
+            log.warn("prompt_scheme_update_mismatch operation=update schemeId={} promptMode={} requestedCount=1 affectedRows=0", id, record.getPromptMode());
+            throw new IllegalArgumentException("Prompt 方案不存在");
+        }
+        log.info("prompt_scheme_updated operation=update schemeId={} promptMode={} requestedCount=1 affectedRows=1", id, record.getPromptMode());
     }
 
     @Transactional
@@ -64,6 +76,7 @@ public class ComfyPresetService {
     private ComfyPresetMapper.PresetRecord record(ComfyPresetDTO dto) {
         ComfyPresetMapper.PresetRecord record = new ComfyPresetMapper.PresetRecord();
         record.setName(dto.getName().trim());
+        record.setPromptMode(dto.getPromptMode().trim().toLowerCase(Locale.ROOT));
         try { record.setSelectedOptionsJson(json.writeValueAsString(dto.getSelectedOptions())); }
         catch (JsonProcessingException e) { throw new IllegalArgumentException("结构化选择不是有效 JSON", e); }
         record.setPositiveExtra(cleanPrompt(dto.getPositiveExtra())); record.setNegativeExtra(cleanPrompt(dto.getNegativeExtra()));
@@ -77,6 +90,19 @@ public class ComfyPresetService {
         if (dto.getName() == null || dto.getName().trim().isEmpty() || dto.getName().trim().length() > 100)
             throw new IllegalArgumentException("方案名称长度应为 1-100");
         if (dto.getRemark() != null && dto.getRemark().trim().length() > 1000) throw new IllegalArgumentException("备注不能超过 1000 字");
+        String promptMode = dto.getPromptMode() == null ? null : dto.getPromptMode().trim().toLowerCase(Locale.ROOT);
+        if (!MODE_TAGS.equals(promptMode) && !MODE_PROSE.equals(promptMode))
+            throw new IllegalArgumentException("Prompt 类型只能是 tags 或 prose");
+        if (MODE_PROSE.equals(promptMode)) {
+            if (dto.getSelectedOptions() == null || !dto.getSelectedOptions().isEmpty())
+                throw new IllegalArgumentException("长文式 Prompt 不能包含结构化词条选择");
+            if (dto.getPositiveExtra() == null || !dto.getPositiveExtra().isEmpty() || dto.getNegativeExtra() == null || !dto.getNegativeExtra().isEmpty())
+                throw new IllegalArgumentException("长文式 Prompt 不能包含标签补充字段");
+            validatePromptLength(dto.getPositivePrompt(), "长文正向描述", 16000);
+            validatePromptLength(dto.getNegativePrompt(), "长文反向约束", 16000);
+            if (dto.getPositivePrompt().trim().isEmpty()) throw new IllegalArgumentException("长文正向描述不能为空");
+            return;
+        }
         Map<String, String> optionCategories = new HashMap<>();
         Map<String, Boolean> categoryMultiple = new LinkedHashMap<>();
         for (Map<String, Object> row : catalog.findEnabledOptions()) {
@@ -116,4 +142,9 @@ public class ComfyPresetService {
     private String textOrEmpty(Object value) { return value == null ? "" : String.valueOf(value); }
     private Long number(Object value) { return value instanceof Number ? ((Number) value).longValue() : Long.valueOf(String.valueOf(value)); }
     private boolean truth(Object value) { return value instanceof Boolean ? (Boolean) value : value instanceof Number ? ((Number) value).intValue() != 0 : Boolean.parseBoolean(String.valueOf(value)); }
+    private String requiredMode(Object value) {
+        String mode = text(value);
+        if (!MODE_TAGS.equals(mode) && !MODE_PROSE.equals(mode)) throw new IllegalStateException("数据库中的 Prompt 类型无效");
+        return mode;
+    }
 }
